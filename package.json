@@ -1,0 +1,11 @@
+{
+  "name": "chuangzuo-workshop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "烬渊·创作工坊 — AI Showrunner (Qwen Cloud Hackathon)",
+  "scripts": {
+    "setup": "cd server && npm install && cd ../web && npm install",
+    "build": "cd web && npm install && npm run build",
+    "start": "cd server && npm install && node src/index.js"
+  }
+}
