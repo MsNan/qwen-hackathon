@@ -5,7 +5,7 @@
 #   2) 在服务器上执行：  bash deploy.sh "你的QWEN_API_KEY"
 set -e
 
-REPO="https://github.com/你的用户名/qwen-hackathon.git"   # ← 改成你的仓库
+REPO="https://github.com/MsNan/qwen-hackathon.git"
 APP_DIR="$HOME/qwen-hackathon"
 QWEN_KEY="${1:-}"
 
