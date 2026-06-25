@@ -87,39 +87,78 @@ export const STRUCTURE_RULES = {
   },
 };
 
-// 拒稿硬伤清单：质检 Agent 据此逐条扣分并给修改建议
+// 拒稿硬伤清单：每条带固定扣分权重(penalty)。质检只做"检测在不在/多严重"，分数由代码算。
 export const REJECTION_FLAGS = [
-  {
-    key: 'weak_healing',
-    name: '淡治愈',
-    detect: '冲突轻、情绪平、靠氛围和小确幸收尾，缺乏强戏剧张力',
-    fix: '加一个"不可调和的核心冲突"，把治愈建立在真实代价之上',
-  },
-  {
-    key: 'anticlimax_dissolved',
-    name: '消解反高潮',
-    detect: '在该爆发的高潮处用回避/和解/淡化把张力消解掉',
-    fix: '高潮处正面硬碰，先把矛盾推到顶点再给解法，不提前泄气',
-  },
   {
     key: 'bystander_protagonist',
     name: '旁观主角',
+    penalty: 15, // 结构性硬伤，权重最高
     detect: '主角主要在观察/被动反应，关键转折由配角或巧合推动',
     fix: '让主角的主动选择直接造成关键转折，承担后果',
   },
   {
+    key: 'anticlimax_dissolved',
+    name: '消解反高潮',
+    penalty: 14,
+    detect: '在该爆发的高潮处用回避/和解/淡化把张力消解掉',
+    fix: '高潮处正面硬碰，先把矛盾推到顶点再给解法，不提前泄气',
+  },
+  {
+    key: 'weak_healing',
+    name: '淡治愈',
+    penalty: 12,
+    detect: '冲突轻、情绪平、靠氛围和小确幸收尾，缺乏强戏剧张力',
+    fix: '加一个"不可调和的核心冲突"，把治愈建立在真实代价之上',
+  },
+  {
     key: 'symbolic_character',
     name: '符号化角色',
+    penalty: 10,
     detect: '角色只承担功能、无矛盾欲望，像工具人/标签',
     fix: '给角色一个"自相矛盾的欲望"和一个具体到能被记住的行为细节',
   },
   {
+    key: 'no_end_hook',
+    name: '章末无钩子',
+    penalty: 10,
+    detect: '章节结尾平淡收束，没有断章悬念/钩子，读者无追读欲',
+    fix: '在章末制造一个未解的悬念或反转预告，断在最吊人处',
+  },
+  {
     key: 'too_short',
     name: '体量偏短',
+    penalty: 8,
     detect: '低于商业化甜区体量，付费感不足',
     fix: `扩到 ${SWEET_SPOT.yanxuanWords.ideal} 字甜区：增信息差与支线，而非注水`,
   },
 ];
+
+// 严重程度系数：质检只判轻/中/重，乘以基础权重得实际扣分
+export const SEVERITY = { 轻: 0.4, 中: 0.7, 重: 1.0 };
+
+// 由"检测结果"按规则算分（纯函数、可复现）。checks: [{key,present,severity}]
+export function scoreFromChecks(checks = []) {
+  const byKey = Object.fromEntries(REJECTION_FLAGS.map((f) => [f.key, f]));
+  const breakdown = [];
+  let deduct = 0;
+  for (const c of checks) {
+    if (!c || !c.present) continue;
+    const f = byKey[c.key];
+    if (!f) continue;
+    const factor = SEVERITY[c.severity] ?? 0.7;
+    const p = Math.round(f.penalty * factor);
+    deduct += p;
+    breakdown.push({ key: f.key, name: f.name, severity: c.severity || '中', penalty: p, evidence: c.evidence || '', fix: c.fix || f.fix });
+  }
+  const score = Math.max(0, Math.min(100, 100 - deduct));
+  const verdict = score >= 85 ? '过' : score >= 70 ? '需改' : '拒';
+  return { score, verdict, deduct, breakdown };
+}
+
+// 给质检 Agent 的固定检查清单（含 key + 三档严重度定义）
+export function qcChecklist() {
+  return REJECTION_FLAGS.map((f) => `  - key="${f.key}" 【${f.name}】(满扣${f.penalty}) 症状:${f.detect}`).join('\n');
+}
 
 // 拼装成可注入系统提示的文本块
 export function methodologyBrief() {

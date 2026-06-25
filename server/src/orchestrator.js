@@ -3,7 +3,7 @@
  * 这就是赛道2 要的 "orchestrate creative content at scale"。
  */
 import { AGENTS } from './agents/index.js';
-import { runtimeBrief } from './agents/methodology.js';
+import { runtimeBrief, scoreFromChecks } from './agents/methodology.js';
 import { complete } from './qwen.js';
 
 /** 运行单个 Agent */
@@ -28,18 +28,27 @@ export async function runAgent(name, userInput, memory = {}, overrides = {}) {
  * 对一章正文跑「质检 → 不过则按意见重写 → 复检」自我修复闭环。
  * 返回 { chapter(终稿), draft(初稿), qcHistory }。onStep 可选，用于流式。
  */
+// 跑一次质检：Agent 只检测硬伤，分数由 scoreFromChecks 按固定权重算出（可追溯）
+async function runQC(text, memory) {
+  const raw = await runAgent('qc', text, memory);
+  const { score, verdict, deduct, breakdown } = scoreFromChecks(raw?.checks || []);
+  return {
+    score, verdict, deduct, breakdown,
+    flags: breakdown.map((b) => ({ name: b.name, severity: b.severity, penalty: b.penalty, evidence: b.evidence, fix: b.fix })),
+    topFix: breakdown[0]?.fix || '',
+  };
+}
+
 async function qcAndRepair(chapterText, memory, onStep = () => {}) {
   onStep({ step: 'qc', status: 'running', label: AGENTS.qc.label });
-  let qc = await runAgent('qc', chapterText, memory);
+  let qc = await runQC(chapterText, memory);
   qc.attempt = 1;
   const qcHistory = [qc];
   onStep({ step: 'qc', status: 'done', data: qc });
 
   let chapter = chapterText;
-  if (qc?.verdict && qc.verdict !== '过') {
-    const advice = [qc.topFix, ...(qc.flags || []).map((f) => `【${f.name}】${f.fix}`)]
-      .filter(Boolean)
-      .join('\n');
+  if (qc.verdict !== '过' && qc.flags.length) {
+    const advice = qc.flags.map((f) => `【${f.name}】${f.fix}`).join('\n');
     onStep({ step: 'chapter', status: 'running', label: AGENTS.chapter.label + '（按质检意见重写）' });
     chapter = await runAgent(
       'chapter',
@@ -49,7 +58,7 @@ async function qcAndRepair(chapterText, memory, onStep = () => {}) {
     );
     onStep({ step: 'chapter', status: 'done', data: chapter, rewritten: true });
     onStep({ step: 'qc', status: 'running', label: AGENTS.qc.label + '（复检）' });
-    qc = await runAgent('qc', `【复检稿】请独立公允重新评分，已修复的硬伤不要再列：\n\n${chapter}`, memory);
+    qc = await runQC(chapter, memory);
     qc.attempt = 2;
     qcHistory.push(qc);
     onStep({ step: 'qc', status: 'done', data: qc });

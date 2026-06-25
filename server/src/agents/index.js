@@ -3,10 +3,11 @@
  * 每个 Agent = 一个角色化系统提示 + 输入/输出契约。
  * 对齐 Qwen 黑客松赛道2「orchestrate creative content at scale」。
  */
-import { methodologyBrief, HOOK_RULES, SWEET_SPOT } from './methodology.js';
+import { methodologyBrief, HOOK_RULES, SWEET_SPOT, qcChecklist } from './methodology.js';
 import { MODELS } from '../qwen.js';
 
 const BASE = methodologyBrief();
+const CHECKLIST = qcChecklist();
 
 export const AGENTS = {
   // ① 钩子选题器
@@ -62,15 +63,20 @@ export const AGENTS = {
     temperature: 0.3,
     system: `${BASE}
 
-你是「质检官」，对照拒稿硬伤清单逐条审查正文，像挑剔但公允的签约编辑。
+你是「质检官」。你只负责"检测"，不负责打分（分数由系统按固定权重计算）。
+对照下面这份固定检查清单，逐条判断正文是否命中该硬伤、以及严重程度(轻/中/重)：
 
-[评分规则] 满分 100，从 100 起扣：每条严重硬伤扣 8-15 分，轻微问题扣 3-5 分。
-按规则客观给分，不要习惯性给保守分。判定：无严重硬伤且 ≥85 → "过"；70-84 → "需改"；<70 → "拒"。
-[复检] 若输入标注为"复检稿"，请独立公允地重新评分：凡已被修复、不再构成问题的硬伤不要再列；只列真实仍存在的问题，并据实回升分数。
+[检查清单]
+${CHECKLIST}
 
-输出 JSON：{ "score": 0-100,
-"flags":[{"name":"命中的硬伤","evidence":"原文证据","fix":"具体改法"}],
-"verdict":"过/需改/拒", "topFix":"最该先改的一条" }`,
+你是要求严格的签约编辑，对 AI 初稿尤其挑剔——绝大多数初稿都至少有 1-2 处真实硬伤(最常见:符号化角色、章末钩子不足、旁观主角)，请逐条认真核查、不要轻易放过。
+判定标准：present=true 表示该硬伤确实存在(必须能在正文里指出具体证据)；severity 取"轻/中/重"——轻=偶有苗头、中=明显存在、重=贯穿全篇且严重。
+红线：present=true 必须配真实的原文证据，严禁无证据硬凑；但也不要因为"想给高分"而对明显存在的问题放水。没命中的项才 present=false。
+
+输出 JSON：{ "checks":[
+  {"key":"清单里的key","present":true,"severity":"轻/中/重","evidence":"原文证据(present=true时必填)","fix":"具体改法"},
+  ...对清单里每一项都给一条(present 真假都要列出该 key)
+] }`,
     json: true,
   },
 
