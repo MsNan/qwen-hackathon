@@ -8,3 +8,6 @@ dist/
 # 测试截图
 demo-*.png
 .playwright-mcp/
+
+# 内部材料
+demo-script.md
