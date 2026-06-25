@@ -18,6 +18,8 @@ From a single sentence, a pipeline of five specialized Qwen-powered agents colla
 4. **QC Editor (the moat)** — audits the draft against a real rejection-trap checklist (passive protagonist, dissolved climax, symbolic characters, weak healing, under-length), scores it, and triggers a **targeted self-rewrite**; on recheck it shows the improved score and which traps were resolved
 5. **Short-Drama Adapter** — converts the chapter into a vertical micro-drama storyboard: scene / shot / dialogue / caption + an image-generation prompt per shot
 
+The user picks a **genre** (suspense / romance / fantasy / sci-fi / urban / history…) and a **length** (short / medium / long), which drives word-count sweet-spots, chapter count, and paywall placement. Beyond chapter one, a **"continue writing"** action drafts subsequent chapters with full continuity, and a **"re-adapt from the full novel"** action turns every written chapter into a complete multi-scene storyboard.
+
 The agents **share memory** (world, characters, plot) for cross-step consistency, **stream** their work live, and the QC → rewrite → recheck loop is a visible **self-repair**.
 
 ## How I built it

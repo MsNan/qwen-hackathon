@@ -3,6 +3,7 @@
  * 这就是赛道2 要的 "orchestrate creative content at scale"。
  */
 import { AGENTS } from './agents/index.js';
+import { runtimeBrief, LENGTHS } from './agents/methodology.js';
 import { complete } from './qwen.js';
 
 /** 运行单个 Agent */
@@ -27,8 +28,9 @@ export async function runAgent(name, userInput, memory = {}, overrides = {}) {
  * 全流程编排：创意 → 选题 → 大纲 → 首章 → 质检 →（不过则重写一次）→ 短剧分镜
  * onStep 回调用于把每步进度实时推给前端。
  */
-export async function runPipeline(idea, onStep = () => {}) {
-  const memory = { idea };
+export async function runPipeline(idea, opts = {}, onStep = () => {}) {
+  const { genre, length } = opts;
+  const memory = { idea, genre, length };
 
   onStep({ step: 'hook', status: 'running', label: AGENTS.hook.label });
   const hook = await runAgent('hook', `创意：${idea}`, memory);
@@ -77,15 +79,43 @@ export async function runPipeline(idea, onStep = () => {}) {
   const screenplay = await runAgent('screenplay', chapter, memory);
   onStep({ step: 'screenplay', status: 'done', data: screenplay });
 
-  return { idea, hook, outline, draft, chapter, qc, qcHistory, screenplay };
+  return { idea, genre, length, hook, outline, draft, chapter, qc, qcHistory, screenplay };
 }
 
 function formatMemory(memory) {
   const parts = [];
+  const rt = runtimeBrief(memory.genre, memory.length);
+  if (rt) parts.push(rt);
   if (memory.idea) parts.push(`原始创意：${memory.idea}`);
   if (memory.hook) parts.push(`选题：${memory.hook.oneLineHook || ''}（题材：${memory.hook.genre || ''}）`);
   if (memory.outline?.logline) parts.push(`故事梗概：${memory.outline.logline}`);
+  // 续写/改编时把已写章节的尾巴带上，保证衔接
+  if (memory.prevTail) parts.push(`上一章结尾：${memory.prevTail}`);
   return parts.join('\n');
+}
+
+/** 续写下一章（按需调用，前端持有 state 回传） */
+export async function writeNextChapter({ hook, outline, genre, length, chapters = [] }) {
+  const memory = { genre, length, hook, outline };
+  const nextIdx = chapters.length; // 已写 N 章 → 写第 N+1 章
+  const meta = outline?.chapters?.[nextIdx] || { no: nextIdx + 1, title: `第${nextIdx + 1}章`, beat: '推进主线' };
+  const prev = chapters[chapters.length - 1] || '';
+  memory.prevTail = prev.slice(-400);
+  const chapter = await runAgent(
+    'chapter',
+    `这是连载的第 ${meta.no} 章《${meta.title}》，本章作用：${meta.beat}。承接上一章结尾，自然衔接、不重复前文，写出本章正文。`,
+    memory,
+    { temperature: 0.85 }
+  );
+  return { index: nextIdx, no: meta.no, title: meta.title, chapter };
+}
+
+/** 全篇改编短剧（基于已写的全部章节，分集） */
+export async function adaptDrama({ hook, outline, genre, length, chapters = [] }) {
+  const memory = { genre, length, hook, outline };
+  const joined = chapters.map((c, i) => `【第${i + 1}章】\n${c}`).join('\n\n');
+  const input = `以下是这部作品已完成的全部 ${chapters.length} 章，请据此改编为竖屏微短剧分镜（覆盖整个故事弧线，关键反转与钩子都要保留；场景按剧情推进编号）：\n\n${joined}`;
+  return runAgent('screenplay', input, memory);
 }
 
 function safeJson(raw) {

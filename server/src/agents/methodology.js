@@ -19,6 +19,36 @@ export const SWEET_SPOT = {
 };
 
 // 钩子工程：标题与开篇的硬规则
+// 题材库：每个类型给一句"商业化抓手"，引导 Agent 写出该类型的味道
+export const GENRES = {
+  悬疑: '靠信息差与反转驱动，物证扣死、逻辑闭环',
+  言情: '靠情感张力与关系拉扯，双向奔赴或虐恋，情绪钩子密集',
+  玄幻: '世界观+金手指+爽点节奏，升级线清晰，每章一个小爽点',
+  科幻: '一个核心设定推演到底，冷峻理性，概念即冲突',
+  都市: '现实代入感+逆袭/打脸爽感，贴近读者生活痛点',
+  历史: '权谋与人物弧光，史感与戏剧张力并重',
+  恐怖: '氛围压迫+未知恐惧，节制留白比血腥更吓人',
+  甜宠: '高糖低虐，互动甜点密集，轻松治愈但有钩子',
+};
+
+// 篇幅配置：直接决定甜区字数、章节数、单章体量、付费墙策略
+export const LENGTHS = {
+  短篇: { words: 18000, chapters: [3, 5], chapterWords: [2500, 3500], note: '盐选甜区中短篇，3-5 章一口气读完，付费墙在第 2-3 章强断章' },
+  中篇: { words: 80000, chapters: [12, 20], chapterWords: [2000, 3000], note: '连载中篇，12-20 章，每 3-5 章一个中高潮' },
+  长篇: { words: 300000, chapters: [30, 60], chapterWords: [2000, 2800], note: '长篇连载，规划 30+ 章主线，前 10 章为试读黄金段，钩子最密' },
+};
+
+// 拼装"本次创作"的题材+篇幅指令，注入各 Agent
+export function runtimeBrief(genre, length) {
+  const parts = [];
+  if (genre && GENRES[genre]) parts.push(`[题材] ${genre}：${GENRES[genre]}。请写出该类型的典型味道与爽点节奏。`);
+  if (length && LENGTHS[length]) {
+    const L = LENGTHS[length];
+    parts.push(`[篇幅] ${length}：目标约 ${L.words} 字，规划 ${L.chapters[0]}-${L.chapters[1]} 章，单章约 ${L.chapterWords[0]}-${L.chapterWords[1]} 字。${L.note}`);
+  }
+  return parts.join('\n');
+}
+
 export const HOOK_RULES = {
   titleMaxLen: 15, // 钩子标题 ≤15 字
   titlePrinciples: [

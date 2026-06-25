@@ -10,8 +10,9 @@ import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
-import { runAgent, runPipeline } from './orchestrator.js';
+import { runAgent, runPipeline, writeNextChapter, adaptDrama } from './orchestrator.js';
 import { AGENTS } from './agents/index.js';
+import { GENRES, LENGTHS } from './agents/methodology.js';
 
 const app = express();
 app.use(cors());
@@ -23,6 +24,29 @@ const webDist = path.resolve(__dirname, '../../web/dist');
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, agents: Object.keys(AGENTS), hasKey: !!process.env.QWEN_API_KEY });
+});
+
+// 可选项：题材 + 篇幅（给前端渲染选择器）
+app.get('/api/options', (_req, res) => {
+  res.json({ genres: Object.keys(GENRES), lengths: Object.keys(LENGTHS) });
+});
+
+// 续写下一章
+app.post('/api/next-chapter', async (req, res) => {
+  try {
+    res.json({ ok: true, data: await writeNextChapter(req.body || {}) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+// 全篇改编短剧
+app.post('/api/adapt-drama', async (req, res) => {
+  try {
+    res.json({ ok: true, data: await adaptDrama(req.body || {}) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
 });
 
 // 单个 Agent
@@ -47,9 +71,9 @@ app.post('/api/pipeline', async (req, res) => {
     res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
 
   try {
-    const idea = (req.body && req.body.idea) || '';
+    const { idea, genre, length } = req.body || {};
     if (!idea) throw new Error('缺少 idea');
-    const result = await runPipeline(idea, (step) => send('step', step));
+    const result = await runPipeline(idea, { genre, length }, (step) => send('step', step));
     send('done', result);
   } catch (e) {
     send('error', { error: String(e.message || e) });
