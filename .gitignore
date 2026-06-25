@@ -9,5 +9,18 @@ dist/
 demo-*.png
 .playwright-mcp/
 
-# 内部材料
+# 内部工作文件（仅本地，不对外）
 demo-script.md
+录屏小抄.txt
+architecture.html
+
+# 敏感配置 / 密钥（防御性，永不上传）
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*credential*
+*secret*
+*token*
+.env.production
