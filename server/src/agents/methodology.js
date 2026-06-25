@@ -31,11 +31,11 @@ export const GENRES = {
   甜宠: '高糖低虐，互动甜点密集，轻松治愈但有钩子',
 };
 
-// 篇幅配置：直接决定甜区字数、章节数、单章体量、付费墙策略
+// 篇幅配置：plan=本次"立即规划"的章节数(非全书总量)；rolling=是否连载式靠续写延伸；volumes=是否分卷
 export const LENGTHS = {
-  短篇: { words: 18000, chapters: [3, 5], chapterWords: [2500, 3500], note: '盐选甜区中短篇，3-5 章一口气读完，付费墙在第 2-3 章强断章' },
-  中篇: { words: 80000, chapters: [12, 20], chapterWords: [2000, 3000], note: '连载中篇，12-20 章，每 3-5 章一个中高潮' },
-  长篇: { words: 300000, chapters: [30, 60], chapterWords: [2000, 2800], note: '长篇连载，规划 30+ 章主线，前 10 章为试读黄金段，钩子最密' },
+  短篇: { words: '约1.8万字', plan: [3, 5], chapterWords: [2500, 3500], rolling: false, volumes: false, note: '盐选甜区中短篇，3-5 章一口气读完，可一次规划全篇，付费墙在第 2-3 章强断章' },
+  中篇: { words: '约8万字', plan: [10, 15], chapterWords: [2000, 3000], rolling: true, volumes: false, note: '连载中篇：先规划首批 10-15 章卡点，后续靠"续写"逐章延伸；每 3-5 章一个中高潮' },
+  长篇: { words: '30万字以上', plan: [10, 12], chapterWords: [2000, 2800], rolling: true, volumes: true, note: '连载长篇(30万字+)：真实网文不会一次排满全书。先给"分卷主线"+首卷约 10 章卡点；后续逐章续写，写满一卷再展开下一卷，篇幅靠连载无限延伸' },
 };
 
 // 拼装"本次创作"的题材+篇幅指令，注入各 Agent
@@ -44,7 +44,15 @@ export function runtimeBrief(genre, length) {
   if (genre && GENRES[genre]) parts.push(`[题材] ${genre}：${GENRES[genre]}。请写出该类型的典型味道与爽点节奏。`);
   if (length && LENGTHS[length]) {
     const L = LENGTHS[length];
-    parts.push(`[篇幅] ${length}：目标约 ${L.words} 字，规划 ${L.chapters[0]}-${L.chapters[1]} 章，单章约 ${L.chapterWords[0]}-${L.chapterWords[1]} 字。${L.note}`);
+    let s = `[篇幅] ${length}：总体量${L.words}，单章约 ${L.chapterWords[0]}-${L.chapterWords[1]} 字。`;
+    if (L.rolling) {
+      s += `这是连载式作品，不要一次排满全书——本次只规划首批 ${L.plan[0]}-${L.plan[1]} 章的卡点，全篇靠"续写"逐章延伸。`;
+      if (L.volumes) s += `请额外给出 3-5 个"分卷主线"(volumes：每卷一个递进的阶段性目标，覆盖全书走向)，章节卡点只列首卷约 10 章。`;
+    } else {
+      s += `可一次规划全篇 ${L.plan[0]}-${L.plan[1]} 章。`;
+    }
+    s += L.note;
+    parts.push(s);
   }
   return parts.join('\n');
 }

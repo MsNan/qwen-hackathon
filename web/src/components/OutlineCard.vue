@@ -28,8 +28,15 @@ defineProps({ data: Object });
       </div>
     </div>
 
+    <div v-if="data.volumes?.length" class="volumes">
+      <h4>分卷主线（长篇连载）</h4>
+      <div v-for="(v, i) in data.volumes" :key="i" class="vol">
+        <span class="vol-no">第{{ v.vol || i + 1 }}卷</span><span class="vol-goal">{{ v.goal }}</span>
+      </div>
+    </div>
+
     <div v-if="data.chapters?.length" class="chapters">
-      <h4>章节卡点 <span class="paywall" v-if="data.paywallAt">付费墙 · {{ data.paywallAt }}</span></h4>
+      <h4>{{ data.volumes?.length ? '首卷章节卡点' : '章节卡点' }} <span class="paywall" v-if="data.paywallAt">付费墙 · {{ data.paywallAt }}</span></h4>
       <ol>
         <li v-for="(c, i) in data.chapters" :key="i">
           <b>{{ c.title }}</b> — {{ c.beat }}
@@ -58,6 +65,10 @@ li { font-size: 13px; line-height: 1.7; color: #4a5060; }
 }
 .rev-point { font-size: 14px; font-weight: 600; color: #2a2440; }
 .rev-ev { font-size: 12px; color: #8a7fd0; margin-top: 2px; }
+.volumes { margin-top: 14px; }
+.vol { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
+.vol-no { flex: none; font-size: 12px; font-weight: 700; color: #6a5cff; background: #efeaff; padding: 2px 8px; border-radius: 6px; }
+.vol-goal { font-size: 13px; color: #4a5060; }
 .chapters { margin-top: 14px; }
 .paywall {
   font-size: 11px; color: #c0392b; background: #fdecec; padding: 2px 8px;

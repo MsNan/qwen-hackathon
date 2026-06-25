@@ -10,7 +10,7 @@ import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
-import { runAgent, runPipeline, writeNextChapter, adaptDrama } from './orchestrator.js';
+import { runAgent, runPipeline, writeNextChapter, rewriteChapter, adaptEpisode } from './orchestrator.js';
 import { AGENTS } from './agents/index.js';
 import { GENRES, LENGTHS } from './agents/methodology.js';
 
@@ -31,7 +31,7 @@ app.get('/api/options', (_req, res) => {
   res.json({ genres: Object.keys(GENRES), lengths: Object.keys(LENGTHS) });
 });
 
-// 续写下一章
+// 续写下一章（含质检自我修复）
 app.post('/api/next-chapter', async (req, res) => {
   try {
     res.json({ ok: true, data: await writeNextChapter(req.body || {}) });
@@ -40,10 +40,19 @@ app.post('/api/next-chapter', async (req, res) => {
   }
 });
 
-// 全篇改编短剧
-app.post('/api/adapt-drama', async (req, res) => {
+// 按作者意见重写指定章节（含复检）
+app.post('/api/rewrite-chapter', async (req, res) => {
   try {
-    res.json({ ok: true, data: await adaptDrama(req.body || {}) });
+    res.json({ ok: true, data: await rewriteChapter(req.body || {}) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+// 把某一章改编成一集短剧（逐集累加）
+app.post('/api/adapt-episode', async (req, res) => {
+  try {
+    res.json({ ok: true, data: await adaptEpisode(req.body || {}) });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }

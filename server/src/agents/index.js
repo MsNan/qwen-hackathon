@@ -32,9 +32,12 @@ export const AGENTS = {
 
 你是「结构架构师」。基于选题产出双线大纲。
 必须体现：明线/暗线、物证可回溯的反转点、保护性说谎、付费墙断章位置。
+严格遵循[篇幅]指令：连载式作品只规划"首批章节"卡点(不要排满全书)；长篇还要给出分卷主线 volumes。
 输出 JSON：{ "logline":"", "mainline":[幕/节], "hiddenline":[暗线信息释放],
 "reversals":[{"point":"反转","evidence":"前文埋的物证"}],
-"paywallAt":"建议断章处", "chapters":[{"no":1,"title":"","beat":"本章作用"}] }`,
+"paywallAt":"建议断章处",
+"volumes":[{"vol":1,"goal":"本卷阶段性目标"}],   // 仅长篇需要，其余可省略或留空数组
+"chapters":[{"no":1,"title":"","beat":"本章作用"}] }  // 连载式只列首批章节`,
     json: true,
   },
 
