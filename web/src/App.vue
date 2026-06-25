@@ -221,6 +221,9 @@ function fmtDate(t) { const d = new Date(t); return `${d.getMonth() + 1}/${d.get
           <textarea v-if="c.editing" v-model="c.text" class="ch-edit" rows="10" />
           <div v-else class="ch-text">{{ c.text }}</div>
 
+          <div v-if="busy.rewrite === i" class="ch-busy"><span class="spin" /> 正在按你的意见重写并重新质检…（约 1 分钟，请稍候，完成后下方评分会更新）</div>
+          <div v-if="busy.episode === i" class="ch-busy"><span class="spin" /> 正在把本章改编成一集短剧…（约 30 秒）</div>
+
           <QcCard v-if="c.qcHistory && c.qcHistory.length" :history="c.qcHistory" />
 
           <div class="rewrite">
@@ -230,6 +233,7 @@ function fmtDate(t) { const d = new Date(t); return `${d.getMonth() + 1}/${d.get
             </button>
           </div>
         </div>
+        <div v-if="busy.next" class="ch-busy"><span class="spin" /> 正在续写下一章并自动质检…（约 1 分钟，请稍候）</div>
         <button v-if="canContinue" class="more" :disabled="busy.next" @click="nextChapter">
           {{ busy.next ? '续写中（含质检）…' : `＋ 继续写第 ${proj.chapters.length + 1} 章（自动质检）` }}
         </button>
@@ -299,6 +303,7 @@ textarea { flex: 1; padding: 12px 14px; border: 1px solid #d7dbe3; border-radius
 .link:hover { background: #e9e6ff; color: #5a3cff; }
 .link:disabled { color: #2f7d4f; background: #e7f6ec; }
 .ch-text { white-space: pre-wrap; line-height: 1.9; font-size: 14.5px; color: #2a2f3a; font-family: "Songti SC", serif; max-height: 320px; overflow: auto; padding: 4px 0; }
+.ch-busy { display: flex; align-items: center; gap: 8px; margin: 10px 0; padding: 10px 14px; background: #f3f0ff; border: 1px solid #ddd4ff; border-radius: 8px; font-size: 13px; color: #5a3cff; font-weight: 600; }
 .ch-edit { width: 100%; line-height: 1.8; font-size: 14px; }
 .rewrite { display: flex; gap: 8px; margin-top: 10px; }
 .rw-input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; }
