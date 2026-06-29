@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { runAgent, runPipeline, writeNextChapter, rewriteChapter, adaptEpisode } from './orchestrator.js';
+import { createClipTask, queryClipTask } from './wan.js';
 import { AGENTS } from './agents/index.js';
 import { GENRES, LENGTHS } from './agents/methodology.js';
 
@@ -53,6 +54,24 @@ app.post('/api/rewrite-chapter', async (req, res) => {
 app.post('/api/adapt-episode', async (req, res) => {
   try {
     res.json({ ok: true, data: await adaptEpisode(req.body || {}) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+// 短剧分镜 → Wan 文生视频(竖屏 5 秒)。提交拿 task_id,前端按 id 轮询。
+app.post('/api/clip/start', async (req, res) => {
+  try {
+    const { prompt, resolution, ratio, duration } = req.body || {};
+    res.json({ ok: true, data: await createClipTask(prompt, { resolution, ratio, duration }) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/clip/status/:taskId', async (req, res) => {
+  try {
+    res.json({ ok: true, data: await queryClipTask(req.params.taskId) });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
