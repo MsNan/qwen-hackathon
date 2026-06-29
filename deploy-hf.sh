@@ -44,7 +44,7 @@ EOF
 echo "▶ 3/5 剥离 HF git 拒收的二进制文件"
 find "$WORK" -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.mp4' -o -iname '*.gif' \) -delete
 # 工作/调试文件不上线
-rm -f "$WORK/probe-wan.js" "$WORK/录屏小抄.txt" "$WORK/demo-script.md" "$WORK/architecture.html" "$WORK/deploy.sh" "$WORK/deploy-hf.sh" 2>/dev/null || true
+rm -f "$WORK"/probe-*.js "$WORK"/server/probe-*.js "$WORK/录屏小抄.txt" "$WORK/demo-script.md" "$WORK/architecture.html" "$WORK/deploy.sh" "$WORK/deploy-hf.sh" 2>/dev/null || true
 
 echo "▶ 4/5 初始化 git 并提交"
 cd "$WORK"

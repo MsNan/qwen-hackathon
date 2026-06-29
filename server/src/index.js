@@ -11,7 +11,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { runAgent, runPipeline, writeNextChapter, rewriteChapter, adaptEpisode } from './orchestrator.js';
-import { createClipTask, queryClipTask } from './wan.js';
+import {
+  createClipTask, queryClipTask,
+  createReferenceImageTask, createKeyframeTask, queryImageTask, createI2VTask,
+} from './wan.js';
 import { AGENTS } from './agents/index.js';
 import { GENRES, LENGTHS } from './agents/methodology.js';
 
@@ -72,6 +75,41 @@ app.post('/api/clip/start', async (req, res) => {
 app.get('/api/clip/status/:taskId', async (req, res) => {
   try {
     res.json({ ok: true, data: await queryClipTask(req.params.taskId) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+// 角色一致性:① 定妆图 ② 换场景关键帧 ③ 图片状态 ④ 关键帧→视频
+app.post('/api/image/reference', async (req, res) => {
+  try {
+    res.json({ ok: true, data: await createReferenceImageTask((req.body || {}).desc) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.post('/api/image/keyframe', async (req, res) => {
+  try {
+    const { refUrl, sceneDesc } = req.body || {};
+    res.json({ ok: true, data: await createKeyframeTask(refUrl, sceneDesc) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/image/status/:taskId', async (req, res) => {
+  try {
+    res.json({ ok: true, data: await queryImageTask(req.params.taskId) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.post('/api/clip/i2v', async (req, res) => {
+  try {
+    const { imgUrl, prompt, resolution, duration } = req.body || {};
+    res.json({ ok: true, data: await createI2VTask(imgUrl, prompt, { resolution, duration }) });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
