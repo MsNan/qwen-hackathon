@@ -19,16 +19,25 @@ async function genClip(s, i) {
     })).json();
     if (!start.ok) throw new Error(start.error);
     const taskId = start.data.taskId;
-    clips[i] = { phase: 'running', msg: '生成中…（约 1–2 分钟）' };
-    for (let n = 0; n < 36; n++) {
+    clips[i] = { phase: 'running', msg: '生成中…（约 1–2 分钟，请勿切走标签页）' };
+    // 最多轮询 ~5 分钟;容忍偶发网络抖动(连续失败多次才放弃)
+    let fails = 0;
+    for (let n = 0; n < 60; n++) {
       await sleep(5000);
-      const q = await (await fetch(`/api/clip/status/${taskId}`)).json();
-      if (!q.ok) throw new Error(q.error);
+      let q;
+      try {
+        q = await (await fetch(`/api/clip/status/${taskId}`)).json();
+      } catch {
+        if (++fails >= 6) throw new Error('网络不稳定，轮询多次失败，可点重试');
+        continue;
+      }
+      fails = 0;
+      if (!q.ok) { clips[i] = { phase: 'error', msg: q.error || '查询失败' }; return; }
       const st = q.data.status;
       if (st === 'SUCCEEDED') { clips[i] = { phase: 'done', url: q.data.videoUrl }; return; }
-      if (st === 'FAILED' || st === 'UNKNOWN') throw new Error(q.data.error || st);
+      if (st === 'FAILED' || st === 'UNKNOWN') { clips[i] = { phase: 'error', msg: q.data.error || st }; return; }
     }
-    throw new Error('生成超时');
+    throw new Error('生成超时(5分钟)，可点重试');
   } catch (e) {
     clips[i] = { phase: 'error', msg: String(e.message || e) };
   }
