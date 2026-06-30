@@ -51,7 +51,7 @@ onMounted(() => {
 });
 watch(proj, persist, { deep: true });
 
-function openProject(p) { proj.value = JSON.parse(JSON.stringify(p)); genre.value = p.genre; length.value = p.length; idea.value = p.idea; }
+function openProject(p) { proj.value = JSON.parse(JSON.stringify(p)); if (!proj.value.cast) proj.value.cast = {}; genre.value = p.genre; length.value = p.length; idea.value = p.idea; }
 function newProject() { proj.value = null; liveHook.value = null; liveOutline.value = null; errorMsg.value = ''; }
 function delProject(id) {
   projects.value = projects.value.filter((p) => p.id !== id);
@@ -106,6 +106,7 @@ function handleEvent(chunk) {
       idea: p.idea, genre: p.genre, length: p.length, hook: p.hook, outline: p.outline,
       chapters: [{ no: fc.no, title: fc.title, draft: fc.draft, text: fc.chapter, qcHistory: fc.qcHistory, editing: false }],
       episodes: p.firstEpisode ? [p.firstEpisode] : [],
+      cast: {}, // 项目级定妆库：角色名 → { appearance, refUrl }
     };
   } else if (ev === 'error') errorMsg.value = p.error;
 }
@@ -244,7 +245,7 @@ function fmtDate(t) { const d = new Date(t); return `${d.getMonth() + 1}/${d.get
         <h3><b>④</b> 短剧分集 <span class="meta-tag">已改 {{ proj.episodes.length }} 集</span></h3>
         <div v-for="(ep, i) in proj.episodes" :key="i" class="ep-blk">
           <div class="ep-label">第 {{ ep.chapterNo }} 集（对应第 {{ ep.chapterNo }} 章）</div>
-          <ScreenplayCard :data="ep" />
+          <ScreenplayCard :data="ep" :cast="proj.cast" />
         </div>
         <p class="ep-hint">每写一章可单独「改成一集」，分集累加，旧集不会被覆盖。</p>
       </article>

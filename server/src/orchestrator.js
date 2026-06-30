@@ -151,6 +151,29 @@ export async function adaptEpisode({ hook, outline, genre, length, chapter, chap
   return { chapterNo, chapterTitle, ...ep };
 }
 
+/**
+ * 选角/定妆抽取：从一集的分镜里识别反复出场的人物，给每个角色一段"定妆图"外貌描述，
+ * 并标注每个分镜出场了哪些角色。供前端建"定妆库 + 已定妆跳过"。
+ * @returns { cast:[{name,appearance}], sceneCharacters:[[name,...], ...] }
+ */
+export async function extractCast({ scenes = [], context = '' }) {
+  const list = scenes
+    .map((s, i) => `${i}. [${s.location || ''}${s.time ? '·' + s.time : ''}] ${s.imagePrompt || ''} | 动作:${s.action || ''} ${s.dialogue ? '| 台词:' + s.dialogue : ''}`)
+    .join('\n');
+  const system =
+    '你是短剧选角与定妆师。从分镜中识别反复出场的【人物角色】，为每个角色写一段用于生成"定妆证件照"的外貌描述：影棚证件照风格、纯浅灰背景、正面清晰半身、固定长相/发型/服装/年龄，便于跨镜头保持同一个人。只输出 JSON，不要解释。';
+  const user =
+    `分镜列表（序号从 0 开始，共 ${scenes.length} 个）：\n${list}\n${context ? '\n故事背景：' + context : ''}\n\n` +
+    `严格输出如下 JSON：\n` +
+    `{"cast":[{"name":"角色名","appearance":"影棚证件照风格,纯浅灰色背景,<年龄/性别/脸型/发型/服装等外貌>,正面清晰半身肖像,均匀打光,高细节"}],` +
+    `"sceneCharacters":[["该镜出场的角色名"], ...]}\n` +
+    `要求：cast 只含人物角色（排除物品/旁白/纯环境）；同一角色全程用同一个 name；` +
+    `sceneCharacters 数组长度必须正好等于 ${scenes.length}，第 i 项是第 i 个分镜出场的角色名数组，没有人物的镜用空数组 []。`;
+  const raw = await complete(system, user, { json: true, temperature: 0.3 });
+  const out = safeJson(raw);
+  return { cast: out?.cast || [], sceneCharacters: out?.sceneCharacters || [] };
+}
+
 function safeJson(raw) {
   try {
     return JSON.parse(raw);

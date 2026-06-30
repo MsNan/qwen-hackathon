@@ -103,16 +103,19 @@ export async function createReferenceImageTask(desc) {
   });
 }
 
-// 2) 换场景关键帧(参考图 + 场景指令,锁住同一人)
-export async function createKeyframeTask(refImageUrl, sceneDesc) {
-  if (!refImageUrl) throw new Error('缺少参考图');
+// 2) 换场景关键帧(1 张或多张定妆图 + 场景指令,锁住每个人)
+export async function createKeyframeTask(refImageUrls, sceneDesc) {
+  const refs = (Array.isArray(refImageUrls) ? refImageUrls : [refImageUrls]).filter(Boolean);
+  if (!refs.length) throw new Error('缺少参考图');
   if (!sceneDesc || !sceneDesc.trim()) throw new Error('缺少场景描述');
   const instruction =
-    `Keep the EXACT same person from the reference image — identical face, hair and features. ` +
-    `Place this same person into the following scene with full character consistency, cinematic, vertical half-body: ${sceneDesc.slice(0, 1500)}`;
+    refs.length > 1
+      ? `There are ${refs.length} reference people. Keep EACH person's face, hair and features identical to their own reference image. Place these same people together into the following scene with full identity consistency, cinematic, vertical: ${sceneDesc.slice(0, 1500)}`
+      : `Keep the EXACT same person from the reference image — identical face, hair and features. Place this same person into the following scene with full character consistency, cinematic, vertical half-body: ${sceneDesc.slice(0, 1500)}`;
+  const content = [...refs.map((u) => ({ image: u })), { text: instruction }];
   return postTask(IMAGE_URL, {
     model: EDIT_MODEL,
-    input: { messages: [{ role: 'user', content: [{ image: refImageUrl }, { text: instruction }] }] },
+    input: { messages: [{ role: 'user', content }] },
     parameters: { n: 1, size: '720*1280', watermark: false },
   });
 }

@@ -10,7 +10,7 @@ import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
-import { runAgent, runPipeline, writeNextChapter, rewriteChapter, adaptEpisode } from './orchestrator.js';
+import { runAgent, runPipeline, writeNextChapter, rewriteChapter, adaptEpisode, extractCast } from './orchestrator.js';
 import {
   createClipTask, queryClipTask,
   createReferenceImageTask, createKeyframeTask, queryImageTask, createI2VTask,
@@ -91,8 +91,18 @@ app.post('/api/image/reference', async (req, res) => {
 
 app.post('/api/image/keyframe', async (req, res) => {
   try {
-    const { refUrl, sceneDesc } = req.body || {};
-    res.json({ ok: true, data: await createKeyframeTask(refUrl, sceneDesc) });
+    const { refUrl, refUrls, sceneDesc } = req.body || {};
+    res.json({ ok: true, data: await createKeyframeTask(refUrls || refUrl, sceneDesc) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+// 选角/定妆抽取：分镜 → 角色表(名字+定妆描述) + 每镜出场角色
+app.post('/api/cast/extract', async (req, res) => {
+  try {
+    const { scenes, context } = req.body || {};
+    res.json({ ok: true, data: await extractCast({ scenes: scenes || [], context: context || '' }) });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }

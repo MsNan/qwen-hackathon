@@ -1,30 +1,30 @@
 <script setup>
-import { reactive, ref } from 'vue';
-const props = defineProps({ data: Object });
+import { reactive, computed } from 'vue';
+const props = defineProps({
+  data: Object,                 // 一集（含 scenes，会被写入 sceneCharacters/castNames）
+  cast: { type: Object, default: () => ({}) }, // 项目级定妆库：name → { appearance, refUrl }
+});
 
-// 主角定妆图状态
-const refState = reactive({ phase: 'idle', url: '', msg: '' });
-const refDesc = ref(
-  '影棚证件照风格，纯浅灰色背景，本剧男主角：二十二岁亚洲男性，圆脸，短黑发，浓眉，穿黑色夹克，正面清晰半身肖像，均匀打光，高细节'
-);
+const extractState = reactive({ phase: 'idle', msg: '' }); // 选角抽取态
+const castPhase = reactive({});  // name → 'running'|'done'|'error'（定妆图生成态，非持久）
+const clips = reactive({});      // 分镜 index → { phase, url, msg }
 
-// 每个分镜的视频状态：{ phase:'idle'|'running'|'done'|'error', url, msg }
-const clips = reactive({});
+const castNames = computed(() => props.data.castNames || []);
+const sceneChars = computed(() => props.data.sceneCharacters || []);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// 通用轮询：拿 taskId，按 url 模板查状态，extract 提取结果；最多 maxTries×5s，容忍抖动
+async function startTask(url, body) {
+  const r = await (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+  if (!r.ok) throw new Error(r.error);
+  return r.data.taskId;
+}
 async function pollTask(statusUrl, taskId, extract, maxTries = 60) {
   let fails = 0;
   for (let n = 0; n < maxTries; n++) {
     await sleep(5000);
     let q;
-    try {
-      q = await (await fetch(`${statusUrl}/${taskId}`)).json();
-    } catch {
-      if (++fails >= 6) throw new Error('网络不稳定，轮询失败');
-      continue;
-    }
+    try { q = await (await fetch(`${statusUrl}/${taskId}`)).json(); }
+    catch { if (++fails >= 6) throw new Error('网络不稳定，轮询失败'); continue; }
     fails = 0;
     if (!q.ok) throw new Error(q.error || '查询失败');
     const st = q.data.status;
@@ -34,55 +34,61 @@ async function pollTask(statusUrl, taskId, extract, maxTries = 60) {
   throw new Error('超时，可重试');
 }
 
-async function startTask(url, body) {
-  const r = await (await fetch(url, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })).json();
-  if (!r.ok) throw new Error(r.error);
-  return r.data.taskId;
-}
-
-// 生成主角定妆图
-async function genReference() {
-  if (refState.phase === 'running') return;
-  refState.phase = 'running'; refState.msg = '生成中…（约 30 秒）';
+// 自动选角：从分镜识别角色 + 每镜出场标注；已在定妆库的角色保留(不覆盖)
+async function autoCast() {
+  if (extractState.phase === 'running') return;
+  extractState.phase = 'running'; extractState.msg = '识别角色中…';
   try {
-    const taskId = await startTask('/api/image/reference', { desc: refDesc.value });
-    const url = await pollTask('/api/image/status', taskId, (d) => d.imageUrl, 24);
-    refState.phase = 'done'; refState.url = url;
-  } catch (e) {
-    refState.phase = 'error'; refState.msg = String(e.message || e);
-  }
+    const r = await (await fetch('/api/cast/extract', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenes: props.data.scenes, context: props.data.episodeTitle }),
+    })).json();
+    if (!r.ok) throw new Error(r.error);
+    props.data.sceneCharacters = r.data.sceneCharacters || [];
+    const names = [];
+    for (const c of (r.data.cast || [])) {
+      if (!c.name) continue;
+      names.push(c.name);
+      if (!props.cast[c.name]) props.cast[c.name] = { appearance: c.appearance || '', refUrl: '' }; // 已定妆则跳过
+    }
+    props.data.castNames = names;
+    extractState.phase = 'done';
+  } catch (e) { extractState.phase = 'error'; extractState.msg = String(e.message || e); }
 }
 
-// 生成某个分镜的视频：有定妆图 → 关键帧+i2v(锁主角)；没有 → 文生视频(t2v)
+// 给某角色生成定妆图
+async function castOne(name) {
+  const c = props.cast[name];
+  if (!c || castPhase[name] === 'running') return;
+  castPhase[name] = 'running';
+  try {
+    const taskId = await startTask('/api/image/reference', { desc: c.appearance });
+    c.refUrl = await pollTask('/api/image/status', taskId, (d) => d.imageUrl, 24);
+    castPhase[name] = 'done';
+  } catch { castPhase[name] = 'error'; }
+}
+
+// 生成某分镜视频：有出场角色定妆图 → 多参考关键帧 + i2v；否则回退 t2v
 async function genClip(s, i) {
-  const cur = clips[i];
-  if (cur && cur.phase === 'running') return;
+  if (clips[i] && clips[i].phase === 'running') return;
   try {
-    if (refState.url) {
-      // ① 换场景关键帧（同一主角进入本镜场景）
-      clips[i] = { phase: 'running', msg: '①生成本镜画面…' };
+    const names = sceneChars.value[i] || [];
+    const refUrls = names.map((n) => props.cast[n]?.refUrl).filter(Boolean);
+    if (refUrls.length) {
+      clips[i] = { phase: 'running', msg: `①生成本镜画面（锁${refUrls.length}位角色）…` };
       const sceneDesc = [s.location, s.time, s.imagePrompt].filter(Boolean).join('，');
-      const kfTask = await startTask('/api/image/keyframe', { refUrl: refState.url, sceneDesc });
-      const keyframe = await pollTask('/api/image/status', kfTask, (d) => d.imageUrl, 24);
-      // ② 关键帧 → 视频
+      const kf = await startTask('/api/image/keyframe', { refUrls, sceneDesc });
+      const keyframe = await pollTask('/api/image/status', kf, (d) => d.imageUrl, 24);
       clips[i] = { phase: 'running', msg: '②生成视频…（约 1–2 分钟，勿切走标签页）' };
-      const vTask = await startTask('/api/clip/i2v', { imgUrl: keyframe, prompt: s.action });
-      const url = await pollTask('/api/clip/status', vTask, (d) => d.videoUrl);
-      clips[i] = { phase: 'done', url };
+      const v = await startTask('/api/clip/i2v', { imgUrl: keyframe, prompt: s.action });
+      clips[i] = { phase: 'done', url: await pollTask('/api/clip/status', v, (d) => d.videoUrl) };
     } else {
-      // 回退：文生视频
       clips[i] = { phase: 'running', msg: '生成中…（约 1–2 分钟，勿切走标签页）' };
       const prompt = [s.imagePrompt, s.action].filter(Boolean).join('。');
-      const vTask = await startTask('/api/clip/start', { prompt });
-      const url = await pollTask('/api/clip/status', vTask, (d) => d.videoUrl);
-      clips[i] = { phase: 'done', url };
+      const v = await startTask('/api/clip/start', { prompt });
+      clips[i] = { phase: 'done', url: await pollTask('/api/clip/status', v, (d) => d.videoUrl) };
     }
-  } catch (e) {
-    clips[i] = { phase: 'error', msg: String(e.message || e) };
-  }
+  } catch (e) { clips[i] = { phase: 'error', msg: String(e.message || e) }; }
 }
 </script>
 
@@ -90,20 +96,31 @@ async function genClip(s, i) {
   <div class="screenplay">
     <div class="ep">🎬 {{ data.episodeTitle }} <span class="cnt">{{ (data.scenes || []).length }} 个分镜</span></div>
 
-    <!-- ① 主角定妆图：锁定角色一致性 -->
-    <div class="refbox">
-      <div class="reftitle">① 主角定妆图 <em>—— 先定妆，后续每个分镜都锁定同一个人</em></div>
-      <textarea v-model="refDesc" class="refdesc" rows="2" placeholder="描述主角长相/年龄/发型/服装…" />
-      <div class="refrow">
-        <button class="refbtn" :disabled="refState.phase === 'running'" @click="genReference">
-          <template v-if="refState.phase === 'running'"><span class="spin" /> {{ refState.msg }}</template>
-          <template v-else-if="refState.phase === 'done'">🔄 重新定妆</template>
-          <template v-else>🎭 生成主角定妆图</template>
+    <!-- 选角 + 定妆库 -->
+    <div class="castbox">
+      <div class="casthead">
+        <span class="ct">🎭 角色定妆库 <em>—— 自动从剧情识别角色，定妆后每个分镜锁定同一批人</em></span>
+        <button class="castbtn" :disabled="extractState.phase === 'running'" @click="autoCast">
+          <template v-if="extractState.phase === 'running'"><span class="spin" /> {{ extractState.msg }}</template>
+          <template v-else-if="castNames.length">🔄 重新选角</template>
+          <template v-else>🎭 自动选角</template>
         </button>
-        <span v-if="refState.phase === 'error'" class="verr">✕ {{ refState.msg }}</span>
-        <span v-else-if="refState.phase === 'done'" class="reftip">✓ 已锁定主角，下面每个分镜会保持同一个人</span>
       </div>
-      <img v-if="refState.url" :src="refState.url" class="refimg" alt="主角定妆图" />
+      <span v-if="extractState.phase === 'error'" class="verr">✕ {{ extractState.msg }}</span>
+
+      <div v-if="castNames.length" class="castlist">
+        <div v-for="name in castNames" :key="name" class="charcard">
+          <div class="cname">{{ name }}<em v-if="cast[name] && cast[name].refUrl" class="ok"> ✓ 已定妆</em></div>
+          <img v-if="cast[name] && cast[name].refUrl" :src="cast[name].refUrl" class="charimg" :alt="name" />
+          <textarea v-else-if="cast[name]" v-model="cast[name].appearance" class="cdesc" rows="3" />
+          <button class="cbtn" :disabled="castPhase[name] === 'running'" @click="castOne(name)">
+            <template v-if="castPhase[name] === 'running'"><span class="spin" /> 定妆中…</template>
+            <template v-else-if="cast[name] && cast[name].refUrl">🔄 重新定妆</template>
+            <template v-else>🎭 生成定妆图</template>
+          </button>
+          <span v-if="castPhase[name] === 'error'" class="verr">✕ 失败，可重试</span>
+        </div>
+      </div>
     </div>
 
     <div class="board">
@@ -115,6 +132,9 @@ async function genClip(s, i) {
         </div>
         <video v-if="clips[i] && clips[i].phase === 'done'" class="vid" :src="clips[i].url" controls playsinline />
         <div v-else class="frame">🖼 {{ s.imagePrompt }}</div>
+        <div v-if="(sceneChars[i] || []).length" class="chips">
+          <span v-for="n in sceneChars[i]" :key="n" class="chip" :class="{ cast: cast[n] && cast[n].refUrl }">{{ n }}</span>
+        </div>
         <div class="action">{{ s.action }}</div>
         <div v-if="s.dialogue" class="dia">「{{ s.dialogue }}」</div>
         <div v-if="s.caption" class="cap">字幕：{{ s.caption }}</div>
@@ -122,7 +142,7 @@ async function genClip(s, i) {
           <button class="vbtn" :disabled="clips[i] && clips[i].phase === 'running'" @click="genClip(s, i)">
             <template v-if="clips[i] && clips[i].phase === 'running'"><span class="spin" /> {{ clips[i].msg }}</template>
             <template v-else-if="clips[i] && clips[i].phase === 'done'">🎬 重新生成</template>
-            <template v-else>🎬 生成视频<em v-if="refState.url" class="lock"> · 锁主角</em></template>
+            <template v-else>🎬 生成视频<em v-if="(sceneChars[i] || []).some((n) => cast[n] && cast[n].refUrl)" class="lock"> · 锁角色</em></template>
           </button>
           <span v-if="clips[i] && clips[i].phase === 'error'" class="verr">✕ {{ clips[i].msg }}</span>
         </div>
@@ -134,16 +154,21 @@ async function genClip(s, i) {
 <style scoped>
 .ep { font-size: 15px; font-weight: 700; color: #221d3a; margin-bottom: 12px; }
 .cnt { font-size: 12px; color: #9aa3b2; font-weight: 400; margin-left: 8px; }
-/* 定妆图区 */
-.refbox { border: 1px dashed #c9c2ff; background: #faf9ff; border-radius: 10px; padding: 12px; margin-bottom: 14px; }
-.reftitle { font-size: 13px; font-weight: 700; color: #5a3cff; }
-.reftitle em { font-weight: 400; color: #9aa3b2; font-style: normal; font-size: 12px; }
-.refdesc { width: 100%; box-sizing: border-box; margin: 8px 0; border: 1px solid #e3e0f5; border-radius: 7px; padding: 7px 9px; font-size: 12.5px; resize: vertical; font-family: inherit; }
-.refrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.refbtn { border: 1px solid #6a5cff; background: #6a5cff; color: #fff; border-radius: 7px; font-size: 12.5px; padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-.refbtn:disabled { opacity: .7; cursor: default; }
-.reftip { font-size: 11.5px; color: #2ea66b; }
-.refimg { display: block; width: 132px; border-radius: 8px; margin-top: 10px; border: 1px solid #e9eaf1; }
+/* 定妆库 */
+.castbox { border: 1px dashed #c9c2ff; background: #faf9ff; border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+.casthead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ct { font-size: 13px; font-weight: 700; color: #5a3cff; }
+.ct em { font-weight: 400; color: #9aa3b2; font-style: normal; font-size: 12px; }
+.castbtn { border: 1px solid #6a5cff; background: #6a5cff; color: #fff; border-radius: 7px; font-size: 12.5px; padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.castbtn:disabled { opacity: .7; cursor: default; }
+.castlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+.charcard { border: 1px solid #e9eaf1; border-radius: 9px; background: #fff; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.cname { font-size: 12.5px; font-weight: 700; color: #2a2f3a; }
+.cname .ok { color: #2ea66b; font-weight: 400; font-style: normal; font-size: 11px; }
+.charimg { width: 100%; border-radius: 6px; border: 1px solid #e9eaf1; }
+.cdesc { width: 100%; box-sizing: border-box; border: 1px solid #e3e0f5; border-radius: 6px; padding: 6px; font-size: 11.5px; resize: vertical; font-family: inherit; }
+.cbtn { border: 1px solid #6a5cff; color: #6a5cff; background: #fff; border-radius: 6px; font-size: 11.5px; padding: 5px 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.cbtn:disabled { opacity: .7; cursor: default; }
 /* 分镜 */
 .board { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .shot { border: 1px solid #e9eaf1; border-radius: 10px; overflow: hidden; background: #fff; }
@@ -154,6 +179,9 @@ async function genClip(s, i) {
 .lens { color: #6a5cff; font-weight: 600; }
 .frame { font-size: 11.5px; color: #6b6f80; background: repeating-linear-gradient(45deg, #fafafe, #fafafe 8px, #f3f2fb 8px, #f3f2fb 16px); padding: 14px 10px; line-height: 1.5; min-height: 56px; }
 .vid { width: 100%; display: block; background: #000; max-height: 320px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 10px 0; }
+.chip { font-size: 10.5px; color: #8a8fa0; background: #f1f0f8; border-radius: 4px; padding: 1px 6px; }
+.chip.cast { color: #2ea66b; background: #e8f7ef; }
 .action { font-size: 13px; color: #2a2f3a; padding: 8px 10px 4px; line-height: 1.6; }
 .dia { font-size: 13px; color: #5a3cff; padding: 2px 10px; font-weight: 600; }
 .cap { font-size: 11.5px; color: #9aa3b2; padding: 4px 10px 6px; }
