@@ -37,13 +37,28 @@ async function ttsNarration(text) {
 const FONT = process.env.CJK_FONT || '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc';
 const W = 720, H = 1280, FPS = 30;
 
-function run(cmd, args) {
+function run(cmd, args, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     const p = spawn(cmd, args);
     let err = '';
+    const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch { /* noop */ } reject(new Error('ffmpeg 超时')); }, timeoutMs);
     p.stderr.on('data', (d) => { err += d.toString(); });
-    p.on('error', reject);
-    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg 退出 ${code}: ${err.slice(-400)}`))));
+    p.on('error', (e) => { clearTimeout(timer); reject(e); });
+    p.on('close', (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`ffmpeg 退出 ${code}: ${err.slice(-400)}`)); });
+  });
+}
+
+// 探测视频时长(秒);解析失败默认 5(用 -i 解析 stderr,不依赖 ffprobe)
+function probeDur(file) {
+  return new Promise((resolve) => {
+    const p = spawn(FFMPEG, ['-i', file]);
+    let err = '';
+    p.stderr.on('data', (d) => { err += d.toString(); });
+    p.on('error', () => resolve(5));
+    p.on('close', () => {
+      const m = err.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/);
+      resolve(m ? (+m[1] * 3600 + +m[2] * 60 + parseFloat(m[3])) : 5);
+    });
   });
 }
 
@@ -96,11 +111,12 @@ export async function assembleEpisode(items) {
     const narr = await ttsNarration(text); // 旁白音轨(失败=null→静音)
     const enc = ['-r', String(FPS), '-c:v', 'libx264', '-crf', '20', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', out];
     if (narr) {
-      // 旁白铺底 + apad 补到视频长(-shortest 以视频为准);保证各段音轨一致便于 concat
+      // 旁白铺底,apad=whole_dur 精确补齐到视频时长(HF ffmpeg 对无限 apad+shortest 会挂,故显式定长)
+      const dur = (await probeDur(src)).toFixed(2);
       await run(FFMPEG, [
         '-y', '-i', src, '-i', narr,
-        '-filter_complex', `[0:v]${vf}[v];[1:a]apad,aformat=sample_rates=48000:channel_layouts=stereo[a]`,
-        '-map', '[v]', '-map', '[a]', '-shortest', ...enc,
+        '-filter_complex', `[0:v]${vf}[v];[1:a]apad=whole_dur=${dur},aformat=sample_rates=48000:channel_layouts=stereo[a]`,
+        '-map', '[v]', '-map', '[a]', '-t', dur, ...enc,
       ]);
     } else {
       await run(FFMPEG, [
