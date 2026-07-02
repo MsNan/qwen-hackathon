@@ -28,8 +28,8 @@ app.use(express.json({ limit: '2mb' }));
 app.use('/assets', express.static(DATA_DIR, { maxAge: '7d' }));
 
 // 限流器:保护公网 Space 的额度(本地部署无此限制)
-const limVideo = rateLimit('video', 12, 300);   // 视频最贵
-const limImage = rateLimit('image', 40, 800);
+const limVideo = rateLimit('video', 40, 600);   // 视频最贵;放宽到可跑完一整集(15+镜)
+const limImage = rateLimit('image', 80, 1200);
 const limText = rateLimit('text', 20, 400);      // 全流程/选角(文本)
 
 // 生产环境：后端直接托管前端打包产物（单服务部署）

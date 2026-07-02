@@ -9,7 +9,7 @@ const props = defineProps({
 const extractState = reactive({ phase: 'idle', msg: '' }); // 选角抽取态
 const castPhase = reactive({});  // name → 'running'|'done'|'error'（定妆图生成态，非持久）
 const clips = reactive({});      // 分镜 index → { phase, url, msg }
-const PRODUCE_CAP = 6;           // 一键成片默认前 N 镜(控额度+时长)
+const PRODUCE_CAP = 30;          // 安全上限(防超长剧 runaway);正常按实际分镜数全生成
 const produceState = reactive({ running: false, done: 0, total: 0 });
 const assembleState = reactive({ phase: 'idle', url: '', msg: '' });
 
