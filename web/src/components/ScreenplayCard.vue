@@ -28,7 +28,11 @@ async function pollTask(statusUrl, taskId, extract, maxTries = 60) {
     fails = 0;
     if (!q.ok) throw new Error(q.error || '查询失败');
     const st = q.data.status;
-    if (st === 'SUCCEEDED') return extract(q.data);
+    if (st === 'SUCCEEDED') {
+      const v = extract(q.data);
+      if (v == null) throw new Error('任务成功但未返回结果(可能触发内容审核),请重试');
+      return v;
+    }
     if (st === 'FAILED' || st === 'UNKNOWN') throw new Error(q.data.error || st);
   }
   throw new Error('超时，可重试');
@@ -81,12 +85,16 @@ async function genClip(s, i) {
       const keyframe = await pollTask('/api/image/status', kf, (d) => d.imageUrl, 24);
       clips[i] = { phase: 'running', msg: '②生成视频…（约 1–2 分钟，勿切走标签页）' };
       const v = await startTask('/api/clip/i2v', { imgUrl: keyframe, prompt: s.action });
-      clips[i] = { phase: 'done', url: await pollTask('/api/clip/status', v, (d) => d.videoUrl) };
+      const url = await pollTask('/api/clip/status', v, (d) => d.videoUrl);
+      s.videoUrl = url; // 持久化到分镜,刷新不丢
+      clips[i] = { phase: 'done', url };
     } else {
       clips[i] = { phase: 'running', msg: '生成中…（约 1–2 分钟，勿切走标签页）' };
       const prompt = [s.imagePrompt, s.action].filter(Boolean).join('。');
       const v = await startTask('/api/clip/start', { prompt });
-      clips[i] = { phase: 'done', url: await pollTask('/api/clip/status', v, (d) => d.videoUrl) };
+      const url = await pollTask('/api/clip/status', v, (d) => d.videoUrl);
+      s.videoUrl = url; // 持久化到分镜,刷新不丢
+      clips[i] = { phase: 'done', url };
     }
   } catch (e) { clips[i] = { phase: 'error', msg: String(e.message || e) }; }
 }
@@ -130,7 +138,7 @@ async function genClip(s, i) {
           <span class="loc">{{ s.location }}<em v-if="s.time"> · {{ s.time }}</em></span>
           <span class="lens">{{ s.shot }}</span>
         </div>
-        <video v-if="clips[i] && clips[i].phase === 'done'" class="vid" :src="clips[i].url" controls playsinline />
+        <video v-if="(clips[i] && clips[i].phase === 'done') || s.videoUrl" class="vid" :src="(clips[i] && clips[i].url) || s.videoUrl" controls playsinline />
         <div v-else class="frame">🖼 {{ s.imagePrompt }}</div>
         <div v-if="(sceneChars[i] || []).length" class="chips">
           <span v-for="n in sceneChars[i]" :key="n" class="chip" :class="{ cast: cast[n] && cast[n].refUrl }">{{ n }}</span>
@@ -141,7 +149,7 @@ async function genClip(s, i) {
         <div class="vbar">
           <button class="vbtn" :disabled="clips[i] && clips[i].phase === 'running'" @click="genClip(s, i)">
             <template v-if="clips[i] && clips[i].phase === 'running'"><span class="spin" /> {{ clips[i].msg }}</template>
-            <template v-else-if="clips[i] && clips[i].phase === 'done'">🎬 重新生成</template>
+            <template v-else-if="(clips[i] && clips[i].phase === 'done') || s.videoUrl">🎬 重新生成</template>
             <template v-else>🎬 生成视频<em v-if="(sceneChars[i] || []).some((n) => cast[n] && cast[n].refUrl)" class="lock"> · 锁角色</em></template>
           </button>
           <span v-if="clips[i] && clips[i].phase === 'error'" class="verr">✕ {{ clips[i].msg }}</span>

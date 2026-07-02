@@ -1,6 +1,6 @@
 # Jinyuan Writers' Studio — AI Showrunner
 
-**Tagline:** A multi-agent studio that turns one sentence into a publish-ready web novel and a shootable short drama — guided by a real signed novelist's craft.
+**Tagline:** A multi-agent studio that turns one sentence into a publish-ready web novel AND a character-consistent short-drama video — guided by a real signed novelist's craft, powered end-to-end by Qwen + Wan.
 
 - **Track:** Track 2 — AI Showrunner
 - **Live demo:** https://msnanguo-chuangzuo-workshop.hf.space
@@ -17,6 +17,9 @@ From a single sentence, a pipeline of five specialized Qwen-powered agents colla
 3. **Chapter Writer** — full chapter prose with an "enter-in-motion" opening and an end-of-chapter hook
 4. **QC Editor (the moat)** — audits the draft against a real rejection-trap checklist (passive protagonist, dissolved climax, symbolic characters, weak healing, missing end-hook, under-length). The agent only *detects* each trap and its severity; the **score is computed in code** from fixed per-trap weights (e.g. `100 − passive-protagonist(severe −15) − symbolic-character(mid −7) = 78`), so it's transparent and reproducible rather than a black-box number. A failing score triggers a **targeted self-rewrite**, and the recheck shows the improved score and which traps were resolved
 5. **Short-Drama Adapter** — converts the chapter into a vertical micro-drama storyboard: scene / shot / dialogue / caption + an image-generation prompt per shot
+6. **Casting & Video Director (multimodal)** — auto-extracts the recurring characters from the story, generates a consistent reference portrait ("casting shot") for each, then produces a real vertical video clip per shot: it places the *same* characters into each new scene via reference-guided image editing (Wan2.7-image-pro) and animates that keyframe into video (Wan image-to-video). A project-level casting library caches each character so identity stays locked **across shots and across chapters**
+
+The result closes the full Track-2 loop — **one sentence → script → QC → storyboard → cast → real, character-consistent video** — with every modality (text, image, video) driven by the Qwen/Wan family on Alibaba Cloud DashScope under a single key.
 
 The user picks a **genre** (suspense / romance / fantasy / sci-fi / urban / history…) and a **length** (short / medium / long), which drives word-count sweet-spots, chapter count, and paywall placement. Beyond chapter one, a **"continue writing"** action drafts subsequent chapters with full continuity, and a **"re-adapt from the full novel"** action turns every written chapter into a complete multi-scene storyboard.
 
@@ -41,9 +44,9 @@ A solo build where the agents don't just write — they **critique like a signed
 Encoding tacit professional craft into explicit, machine-usable rules is where the real value sits — the orchestration and UI are means to surface that judgment. A small, well-prompted multi-agent loop with self-critique beats a single big prompt.
 
 ## What's next
-- Wire each per-shot image prompt to a Qwen vision/video model for end-to-end short-video output
+- One-click "auto-produce": run cast → keyframes → video for the whole episode unattended, then auto-assemble the clips into a single subtitled, voiced vertical episode (ffmpeg + Qwen-TTS)
 - Long-form series memory for multi-chapter continuity
 - A B2B mode for short-drama studios and a creator subscription
 
 ## Built with
-`Qwen` · `dashscope` · `Node.js` · `Express` · `Server-Sent Events` · `Vue 3` · `Vite` · `Docker` · `Hugging Face Spaces`
+`Qwen` · `Wan` (text-to-video / image-to-video / image editing) · `dashscope` · `Node.js` · `Express` · `Server-Sent Events` · `Vue 3` · `Vite` · `Docker` · `Hugging Face Spaces`

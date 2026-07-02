@@ -32,6 +32,7 @@ async function postTask(url, body) {
       'X-DashScope-Async': 'enable',
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
   });
   const j = await res.json().catch(() => ({}));
   const taskId = j?.output?.task_id;
@@ -123,7 +124,7 @@ export async function createKeyframeTask(refImageUrls, sceneDesc) {
 // 查询图片任务 → 取生成图 URL(适配两种返回结构)
 export async function queryImageTask(taskId) {
   if (!taskId) throw new Error('缺少 taskId');
-  const res = await fetch(taskUrl(taskId), { headers: { Authorization: `Bearer ${apiKey()}` } });
+  const res = await fetch(taskUrl(taskId), { headers: { Authorization: `Bearer ${apiKey()}` }, signal: AbortSignal.timeout(30000) });
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(j?.message || `查询失败 HTTP ${res.status}`);
   const out = j?.output || {};

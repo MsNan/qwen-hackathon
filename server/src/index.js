@@ -17,10 +17,19 @@ import {
 } from './wan.js';
 import { AGENTS } from './agents/index.js';
 import { GENRES, LENGTHS } from './agents/methodology.js';
+import { mirrorAsset, rateLimit, DATA_DIR } from './ops.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+
+// 镜像资产静态服务(定妆图/视频下载到本地后从这里回发,规避 24h 过期)
+app.use('/assets', express.static(DATA_DIR, { maxAge: '7d' }));
+
+// 限流器:保护公网 Space 的额度(本地部署无此限制)
+const limVideo = rateLimit('video', 12, 300);   // 视频最贵
+const limImage = rateLimit('image', 40, 800);
+const limText = rateLimit('text', 20, 400);      // 全流程/选角(文本)
 
 // 生产环境：后端直接托管前端打包产物（单服务部署）
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -63,7 +72,7 @@ app.post('/api/adapt-episode', async (req, res) => {
 });
 
 // 短剧分镜 → Wan 文生视频(竖屏 5 秒)。提交拿 task_id,前端按 id 轮询。
-app.post('/api/clip/start', async (req, res) => {
+app.post('/api/clip/start', limVideo, async (req, res) => {
   try {
     const { prompt, resolution, ratio, duration } = req.body || {};
     res.json({ ok: true, data: await createClipTask(prompt, { resolution, ratio, duration }) });
@@ -74,14 +83,16 @@ app.post('/api/clip/start', async (req, res) => {
 
 app.get('/api/clip/status/:taskId', async (req, res) => {
   try {
-    res.json({ ok: true, data: await queryClipTask(req.params.taskId) });
+    const data = await queryClipTask(req.params.taskId);
+    if (data.videoUrl) data.videoUrl = await mirrorAsset(data.videoUrl, 'mp4'); // 镜像,规避24h过期
+    res.json({ ok: true, data });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
 // 角色一致性:① 定妆图 ② 换场景关键帧 ③ 图片状态 ④ 关键帧→视频
-app.post('/api/image/reference', async (req, res) => {
+app.post('/api/image/reference', limImage, async (req, res) => {
   try {
     res.json({ ok: true, data: await createReferenceImageTask((req.body || {}).desc) });
   } catch (e) {
@@ -89,7 +100,7 @@ app.post('/api/image/reference', async (req, res) => {
   }
 });
 
-app.post('/api/image/keyframe', async (req, res) => {
+app.post('/api/image/keyframe', limImage, async (req, res) => {
   try {
     const { refUrl, refUrls, sceneDesc } = req.body || {};
     res.json({ ok: true, data: await createKeyframeTask(refUrls || refUrl, sceneDesc) });
@@ -99,7 +110,7 @@ app.post('/api/image/keyframe', async (req, res) => {
 });
 
 // 选角/定妆抽取：分镜 → 角色表(名字+定妆描述) + 每镜出场角色
-app.post('/api/cast/extract', async (req, res) => {
+app.post('/api/cast/extract', limText, async (req, res) => {
   try {
     const { scenes, context } = req.body || {};
     res.json({ ok: true, data: await extractCast({ scenes: scenes || [], context: context || '' }) });
@@ -110,13 +121,15 @@ app.post('/api/cast/extract', async (req, res) => {
 
 app.get('/api/image/status/:taskId', async (req, res) => {
   try {
-    res.json({ ok: true, data: await queryImageTask(req.params.taskId) });
+    const data = await queryImageTask(req.params.taskId);
+    if (data.imageUrl) data.imageUrl = await mirrorAsset(data.imageUrl, 'png'); // 镜像,规避24h过期
+    res.json({ ok: true, data });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
-app.post('/api/clip/i2v', async (req, res) => {
+app.post('/api/clip/i2v', limVideo, async (req, res) => {
   try {
     const { imgUrl, prompt, resolution, duration } = req.body || {};
     res.json({ ok: true, data: await createI2VTask(imgUrl, prompt, { resolution, duration }) });
@@ -137,7 +150,7 @@ app.post('/api/agent', async (req, res) => {
 });
 
 // 全流程：SSE 流式推送每一步
-app.post('/api/pipeline', async (req, res) => {
+app.post('/api/pipeline', limText, async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -145,6 +158,10 @@ app.post('/api/pipeline', async (req, res) => {
 
   const send = (event, payload) =>
     res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+
+  // 心跳：单章写作常 >60s 零字节,防 HF 反向代理掐断空闲连接
+  const hb = setInterval(() => { try { res.write(': hb\n\n'); } catch { /* ignore */ } }, 15000);
+  req.on('close', () => clearInterval(hb));
 
   try {
     const { idea, genre, length } = req.body || {};
@@ -154,6 +171,7 @@ app.post('/api/pipeline', async (req, res) => {
   } catch (e) {
     send('error', { error: String(e.message || e) });
   } finally {
+    clearInterval(hb);
     res.end();
   }
 });

@@ -15,13 +15,25 @@ export async function runAgent(name, userInput, memory = {}, overrides = {}) {
   const memoryBlock = formatMemory(memory);
   const system = memoryBlock ? `${agent.system}\n\n[已确定的创作记忆]\n${memoryBlock}` : agent.system;
 
-  const raw = await complete(system, userInput, {
+  // JSON Agent：解析失败重试 1 次,仍失败则抛错(避免质检等 fail-open 静默"满分通过")
+  if (agent.json) {
+    let last;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const raw = await complete(system, userInput, {
+        model: agent.model,
+        temperature: (overrides.temperature ?? agent.temperature) + (attempt - 1) * 0.1,
+        json: true,
+      });
+      last = safeJson(raw);
+      if (!last?._parseError) return last;
+    }
+    throw new Error(`Agent「${name}」返回无法解析为 JSON,请重试`);
+  }
+
+  return complete(system, userInput, {
     model: agent.model,
     temperature: overrides.temperature ?? agent.temperature,
-    json: agent.json,
   });
-
-  return agent.json ? safeJson(raw) : raw;
 }
 
 /**
@@ -171,7 +183,14 @@ export async function extractCast({ scenes = [], context = '' }) {
     `sceneCharacters 数组长度必须正好等于 ${scenes.length}，第 i 项是第 i 个分镜出场的角色名数组，没有人物的镜用空数组 []。`;
   const raw = await complete(system, user, { json: true, temperature: 0.3 });
   const out = safeJson(raw);
-  return { cast: out?.cast || [], sceneCharacters: out?.sceneCharacters || [] };
+  // 校验：cast 只留有名字的；sceneCharacters 归一化到分镜数、每项只保留 cast 里真实存在的角色名
+  const cast = (Array.isArray(out?.cast) ? out.cast : []).filter((c) => c && c.name);
+  const names = new Set(cast.map((c) => c.name));
+  const rawSc = Array.isArray(out?.sceneCharacters) ? out.sceneCharacters : [];
+  const sceneCharacters = scenes.map((_, i) =>
+    (Array.isArray(rawSc[i]) ? rawSc[i] : []).filter((n) => names.has(n))
+  );
+  return { cast, sceneCharacters };
 }
 
 function safeJson(raw) {
