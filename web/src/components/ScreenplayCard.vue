@@ -192,7 +192,7 @@ async function assembleEp() {
           <span class="loc">{{ s.location }}<em v-if="s.time"> · {{ s.time }}</em></span>
           <span class="lens">{{ s.shot }}</span>
         </div>
-        <video v-if="(clips[i] && clips[i].phase === 'done') || s.videoUrl" class="vid" :src="(clips[i] && clips[i].url) || s.videoUrl" controls playsinline />
+        <video v-if="(clips[i] && clips[i].phase === 'done') || s.videoUrl" class="vid" :src="(clips[i] && clips[i].url) || s.videoUrl" controls playsinline preload="none" />
         <div v-else class="frame">🖼 {{ s.imagePrompt }}</div>
         <div v-if="(sceneChars[i] || []).length" class="chips">
           <span v-for="n in sceneChars[i]" :key="n" class="chip" :class="{ cast: cast[n] && cast[n].refUrl }">{{ n }}</span>
@@ -214,7 +214,7 @@ async function assembleEp() {
     <!-- 拼接后的整集成片 -->
     <div v-if="assembleState.url || data.episodeVideo" class="finalep">
       <div class="finaltitle">🎞 {{ t('finalEpisode') }}</div>
-      <video class="finalvid" :src="assembleState.url || data.episodeVideo" controls playsinline />
+      <video class="finalvid" :src="assembleState.url || data.episodeVideo" controls playsinline preload="metadata" />
     </div>
   </div>
 </template>

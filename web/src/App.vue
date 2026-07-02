@@ -30,13 +30,17 @@ const proj = ref(null);            // 当前作品
 function loadStore() {
   try { projects.value = JSON.parse(localStorage.getItem(STORE) || '[]'); } catch { projects.value = []; }
 }
+let saveTimer = null;
 function persist() {
   if (!proj.value) return;
-  proj.value.updatedAt = Date.now();
-  const i = projects.value.findIndex((p) => p.id === proj.value.id);
-  if (i >= 0) projects.value[i] = proj.value; else projects.value.unshift(proj.value);
+  // 存一份非响应式快照(不回写 proj.updatedAt,避免 deep watch 自触发死循环)
+  const snap = JSON.parse(JSON.stringify(proj.value));
+  snap.updatedAt = Date.now();
+  const i = projects.value.findIndex((p) => p.id === snap.id);
+  if (i >= 0) projects.value[i] = snap; else projects.value.unshift(snap);
   try { localStorage.setItem(STORE, JSON.stringify(projects.value)); } catch { /* 配额满则忽略 */ }
 }
+function schedulePersist() { clearTimeout(saveTimer); saveTimer = setTimeout(persist, 600); } // 防抖:打字/生成时不反复整包序列化
 onMounted(() => {
   loadStore();
   fetch('/api/options').then((r) => r.json()).then((o) => {
@@ -44,7 +48,7 @@ onMounted(() => {
     if (o.lengths?.length) lengths.value = o.lengths;
   }).catch(() => {});
 });
-watch(proj, persist, { deep: true });
+watch(proj, schedulePersist, { deep: true });
 
 function openProject(p) { proj.value = JSON.parse(JSON.stringify(p)); if (!proj.value.cast) proj.value.cast = {}; genre.value = p.genre; length.value = p.length; idea.value = p.idea; }
 function newProject() { proj.value = null; liveHook.value = null; liveOutline.value = null; errorMsg.value = ''; }
