@@ -18,6 +18,7 @@ import {
 import { AGENTS } from './agents/index.js';
 import { GENRES, LENGTHS } from './agents/methodology.js';
 import { mirrorAsset, rateLimit, DATA_DIR } from './ops.js';
+import { startAssembleJob, getAssembleJob } from './assemble.js';
 
 const app = express();
 app.use(cors());
@@ -136,6 +137,20 @@ app.post('/api/clip/i2v', limVideo, async (req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
+});
+
+// 拼整集：把各分镜视频合成一条竖屏成片(烧字幕),异步任务
+app.post('/api/episode/assemble', limText, async (req, res) => {
+  try {
+    const { items } = req.body || {};
+    res.json({ ok: true, data: startAssembleJob(items || []) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/episode/assemble/status/:jobId', (req, res) => {
+  res.json({ ok: true, data: getAssembleJob(req.params.jobId) });
 });
 
 // 单个 Agent

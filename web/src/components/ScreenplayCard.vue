@@ -11,6 +11,7 @@ const castPhase = reactive({});  // name → 'running'|'done'|'error'（定妆�
 const clips = reactive({});      // 分镜 index → { phase, url, msg }
 const PRODUCE_CAP = 6;           // 一键成片默认前 N 镜(控额度+时长)
 const produceState = reactive({ running: false, done: 0, total: 0 });
+const assembleState = reactive({ phase: 'idle', url: '', msg: '' });
 
 const castNames = computed(() => props.data.castNames || []);
 const sceneChars = computed(() => props.data.sceneCharacters || []);
@@ -120,6 +121,25 @@ async function autoProduce() {
     }
   } finally { produceState.running = false; }
 }
+
+// 拼整集：把已生成的分镜视频合成一条竖屏成片(烧字幕)
+async function assembleEp() {
+  if (assembleState.phase === 'running') return;
+  const items = (props.data.scenes || [])
+    .filter((s) => s.videoUrl)
+    .map((s) => ({ videoUrl: s.videoUrl, subtitle: s.caption || s.dialogue || '' }));
+  if (!items.length) { assembleState.phase = 'error'; assembleState.msg = t('noClips'); return; }
+  assembleState.phase = 'running'; assembleState.msg = t('assembling');
+  try {
+    const r = await (await fetch('/api/episode/assemble', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }),
+    })).json();
+    if (!r.ok) throw new Error(r.error);
+    const url = await pollTask('/api/episode/assemble/status', r.data.jobId, (d) => d.videoUrl, 60);
+    assembleState.phase = 'done'; assembleState.url = url;
+    props.data.episodeVideo = url; // 持久化
+  } catch (e) { assembleState.phase = 'error'; assembleState.msg = String(e.message || e); }
+}
 </script>
 
 <template>
@@ -140,8 +160,13 @@ async function autoProduce() {
             <template v-if="produceState.running"><span class="spin" /> {{ t('producing', { done: produceState.done, total: produceState.total }) }}</template>
             <template v-else>{{ t('autoProduce') }}</template>
           </button>
+          <button class="assemble" :disabled="assembleState.phase === 'running'" @click="assembleEp">
+            <template v-if="assembleState.phase === 'running'"><span class="spin" /> {{ t('assembling') }}</template>
+            <template v-else>{{ t('assembleBtn') }}</template>
+          </button>
         </div>
       </div>
+      <span v-if="assembleState.phase === 'error'" class="verr">✕ {{ assembleState.msg }}</span>
       <div class="producehint">{{ t('produceHint', { cap: PRODUCE_CAP }) }}</div>
       <span v-if="extractState.phase === 'error'" class="verr">✕ {{ extractState.msg }}</span>
 
@@ -185,6 +210,12 @@ async function autoProduce() {
         </div>
       </div>
     </div>
+
+    <!-- 拼接后的整集成片 -->
+    <div v-if="assembleState.url || data.episodeVideo" class="finalep">
+      <div class="finaltitle">🎞 {{ t('finalEpisode') }}</div>
+      <video class="finalvid" :src="assembleState.url || data.episodeVideo" controls playsinline />
+    </div>
   </div>
 </template>
 
@@ -202,6 +233,12 @@ async function autoProduce() {
 .produce { border: none; background: linear-gradient(90deg, #6a5cff, #a15cff); color: #fff; border-radius: 7px; font-size: 12.5px; font-weight: 700; padding: 6px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; box-shadow: 0 2px 8px rgba(106,92,255,.3); }
 .produce:disabled { opacity: .8; cursor: default; }
 .producehint { font-size: 11.5px; color: #9aa3b2; margin-top: 6px; }
+.assemble { border: 1px solid #2ea66b; background: #fff; color: #2ea66b; border-radius: 7px; font-size: 12.5px; font-weight: 700; padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.assemble:hover:not(:disabled) { background: #e8f7ef; }
+.assemble:disabled { opacity: .8; cursor: default; }
+.finalep { margin-top: 14px; padding: 12px; border: 1px solid #cdebd9; background: #f3fbf6; border-radius: 10px; }
+.finaltitle { font-size: 13px; font-weight: 700; color: #2ea66b; margin-bottom: 8px; }
+.finalvid { width: 260px; max-width: 100%; border-radius: 8px; display: block; background: #000; }
 .castlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
 .charcard { border: 1px solid #e9eaf1; border-radius: 9px; background: #fff; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .cname { font-size: 12.5px; font-weight: 700; color: #2a2f3a; }

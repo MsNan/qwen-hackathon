@@ -162,6 +162,10 @@ const dict = {
     producing: '一键成片中 {done}/{total}…',
     produceHint: '自动跑:选角 → 全员定妆 → 逐镜生成(前 {cap} 镜)',
     produceDone: '✓ 成片完成 {done}/{total}',
+    assembleBtn: '🎞 拼成整集',
+    assembling: '拼接成片中…',
+    noClips: '请先生成至少一个分镜视频',
+    finalEpisode: '完整成片',
   },
   en: {
     // App header
@@ -264,6 +268,10 @@ const dict = {
     producing: 'Auto-producing {done}/{total}…',
     produceHint: 'Runs automatically: cast → style all → generate each shot (first {cap})',
     produceDone: '✓ Produced {done}/{total}',
+    assembleBtn: '🎞 Assemble episode',
+    assembling: 'Assembling…',
+    noClips: 'Generate at least one shot video first',
+    finalEpisode: 'Full episode',
   },
 };
 

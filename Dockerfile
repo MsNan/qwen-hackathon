@@ -1,6 +1,10 @@
 # 烬渊·创作工坊 单镜像部署（前端构建产物由后端托管）
 FROM node:22-slim
 
+# ffmpeg(拼整集) + Noto CJK 字体(烧中文字幕)
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # 先装依赖（利用缓存）
