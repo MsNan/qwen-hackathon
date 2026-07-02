@@ -10,6 +10,29 @@ import path from 'node:path';
 import { DATA_DIR } from './ops.js';
 
 const FFMPEG = process.env.FFMPEG || 'ffmpeg';
+// 预设音色 TTS(给每镜配旁白;失败则回退静音)
+const TTS_URL = 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
+const TTS_MODEL = process.env.TTS_MODEL || 'qwen3-tts-flash';
+const TTS_VOICE = process.env.TTS_VOICE || 'Cherry';
+async function ttsNarration(text) {
+  try {
+    const key = process.env.QWEN_API_KEY;
+    if (!key || !text || !text.trim()) return null;
+    const r = await fetch(TTS_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: TTS_MODEL, input: { text: text.slice(0, 300), voice: TTS_VOICE } }),
+      signal: AbortSignal.timeout(60000),
+    });
+    const j = await r.json().catch(() => ({}));
+    const url = j?.output?.audio?.url;
+    if (!url) return null;
+    const buf = Buffer.from(await (await fetch(url, { signal: AbortSignal.timeout(60000) })).arrayBuffer());
+    const fp = path.join(DATA_DIR, 'tts_' + createHash('sha1').update(text).digest('hex').slice(0, 12) + '.mp3');
+    writeFileSync(fp, buf);
+    return fp;
+  } catch { return null; }
+}
 // 容器内 CJK 字体(Dockerfile 装 fonts-noto-cjk);本地可用 FONT 覆盖
 const FONT = process.env.CJK_FONT || '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc';
 const W = 720, H = 1280, FPS = 30;
@@ -62,20 +85,29 @@ export async function assembleEpisode(items) {
   for (let i = 0; i < list.length; i++) {
     const src = await resolveLocal(list[i].videoUrl);
     const out = path.join(DATA_DIR, `norm_${createHash('sha1').update(src + i).digest('hex').slice(0, 12)}.mp4`);
-    const sub = escText(list[i].subtitle || '');
+    const text = list[i].subtitle || '';
+    const sub = escText(text);
     const vf = [
       `scale=${W}:${H}:force_original_aspect_ratio=decrease`,
       `pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:black`,
       'setsar=1', `fps=${FPS}`,
       sub ? `drawtext=fontfile='${FONT}':text='${sub}':fontcolor=white:fontsize=38:borderw=3:bordercolor=black@0.85:x=(w-text_w)/2:y=h-150` : null,
     ].filter(Boolean).join(',');
-    // 统一加静音音轨,保证 concat 各段流一致
-    await run(FFMPEG, [
-      '-y', '-i', src, '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo',
-      '-vf', vf, '-map', '0:v:0', '-map', '1:a:0', '-shortest',
-      '-r', String(FPS), '-c:v', 'libx264', '-crf', '20', '-preset', 'veryfast',
-      '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', out,
-    ]);
+    const narr = await ttsNarration(text); // 旁白音轨(失败=null→静音)
+    const enc = ['-r', String(FPS), '-c:v', 'libx264', '-crf', '20', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', out];
+    if (narr) {
+      // 旁白铺底 + apad 补到视频长(-shortest 以视频为准);保证各段音轨一致便于 concat
+      await run(FFMPEG, [
+        '-y', '-i', src, '-i', narr,
+        '-filter_complex', `[0:v]${vf}[v];[1:a]apad,aformat=sample_rates=48000:channel_layouts=stereo[a]`,
+        '-map', '[v]', '-map', '[a]', '-shortest', ...enc,
+      ]);
+    } else {
+      await run(FFMPEG, [
+        '-y', '-i', src, '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo',
+        '-vf', vf, '-map', '0:v:0', '-map', '1:a:0', '-shortest', ...enc,
+      ]);
+    }
     norm.push(out);
   }
   // concat

@@ -127,7 +127,7 @@ async function assembleEp() {
   if (assembleState.phase === 'running') return;
   const items = (props.data.scenes || [])
     .filter((s) => s.videoUrl)
-    .map((s) => ({ videoUrl: s.videoUrl, subtitle: s.caption || s.dialogue || '' }));
+    .map((s) => ({ videoUrl: s.videoUrl, subtitle: s.dialogue || s.caption || '' }));
   if (!items.length) { assembleState.phase = 'error'; assembleState.msg = t('noClips'); return; }
   assembleState.phase = 'running'; assembleState.msg = t('assembling');
   try {
