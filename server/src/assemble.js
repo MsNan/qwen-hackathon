@@ -24,17 +24,26 @@ function run(cmd, args) {
   });
 }
 
-// 把 /assets/x.mp4 解析为本地路径;远端则下载到本地
+// 把 /assets/x.mp4 解析为本地路径;远端则下载到本地(带路径穿越 + SSRF 守卫)
 async function resolveLocal(videoUrl) {
+  if (typeof videoUrl !== 'string' || !videoUrl) throw new Error('无效视频地址');
   if (videoUrl.startsWith('/assets/')) {
-    const fp = path.join(DATA_DIR, videoUrl.slice('/assets/'.length));
+    const base = path.resolve(DATA_DIR);
+    const fp = path.resolve(base, videoUrl.slice('/assets/'.length));
+    if (!fp.startsWith(base + path.sep)) throw new Error('非法资源路径');
     if (existsSync(fp)) return fp;
+    throw new Error('分镜视频已过期或丢失,请重新生成');
   }
+  let u;
+  try { u = new URL(videoUrl); } catch { throw new Error('无效视频地址'); }
+  if (!/^https?:$/.test(u.protocol)) throw new Error('仅支持 http(s) 视频地址');
+  if (/^(localhost$|127\.|0\.|10\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(u.hostname)) throw new Error('不允许的地址');
   const name = 'dl_' + createHash('sha1').update(videoUrl).digest('hex').slice(0, 16) + '.mp4';
   const fp = path.join(DATA_DIR, name);
   if (!existsSync(fp)) {
     const r = await fetch(videoUrl, { signal: AbortSignal.timeout(60000) });
     if (!r.ok) throw new Error(`下载分镜失败 HTTP ${r.status}`);
+    if (Number(r.headers.get('content-length') || 0) > 60 * 1024 * 1024) throw new Error('视频过大');
     writeFileSync(fp, Buffer.from(await r.arrayBuffer()));
   }
   return fp;

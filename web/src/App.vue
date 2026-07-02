@@ -22,6 +22,25 @@ const liveHook = ref(null);
 const liveOutline = ref(null);
 const stageMsg = ref('');
 
+// ===== Token 预算管理 =====
+const tokenBudget = ref(200000);   // 可调预算(tokens)
+const economy = ref(false);        // 经济模式:pro→plus 降级
+function addTokens(n) {
+  if (!proj.value || !n) return;
+  proj.value.usage = proj.value.usage || { tokens: 0 };
+  proj.value.usage.tokens += n;
+  if (proj.value.usage.tokens > tokenBudget.value) economy.value = true; // 超预算自动进经济模式
+}
+const usedTokens = computed(() => proj.value?.usage?.tokens || 0);
+const videoSec = computed(() => {
+  let n = 0;
+  (proj.value?.episodes || []).forEach((ep) => (ep.scenes || []).forEach((s) => { if (s.videoUrl) n += 1; }));
+  return n * 5; // 每镜约 5 秒
+});
+// 粗略成本估算(仅供参考):文本≈$1.5/百万token,视频≈$0.1/秒
+const estCost = computed(() => (usedTokens.value / 1e6 * 1.5 + videoSec.value * 0.1).toFixed(2));
+const budgetPct = computed(() => Math.min(100, Math.round(usedTokens.value / tokenBudget.value * 100)));
+
 // ===== 本地持久化（localStorage）=====
 const STORE = 'cw_projects';
 const projects = ref([]);          // 历史作品列表（全量对象）
@@ -70,9 +89,12 @@ async function run() {
   try {
     const res = await fetch('/api/pipeline', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idea: idea.value, genre: genre.value, length: length.value }),
+      body: JSON.stringify({ idea: idea.value, genre: genre.value, length: length.value, lang: lang.value, economy: economy.value }),
     });
-    if (!res.ok || !res.body) throw new Error(lang.value === 'en' ? 'Service not ready: make sure the backend is running and an API key is configured.' : '服务未就绪：请确认后端已启动且已配置 API Key');
+    if (!res.ok || !res.body) {
+      const j = await res.json().catch(() => null); // 透传限流(429)等后端错误,不再误报"服务未就绪"
+      throw new Error(j?.error || (lang.value === 'en' ? 'Service not ready: check backend + API key.' : '服务未就绪：请确认后端已启动且已配置 API Key'));
+    }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
@@ -106,6 +128,7 @@ function handleEvent(chunk) {
       chapters: [{ no: fc.no, title: fc.title, draft: fc.draft, text: fc.chapter, qcHistory: fc.qcHistory, editing: false }],
       episodes: p.firstEpisode ? [p.firstEpisode] : [],
       cast: {}, // 项目级定妆库：角色名 → { appearance, refUrl }
+      usage: { tokens: p.usage?.totalTokens || 0 }, // token 用量累计
     };
   } else if (ev === 'error') errorMsg.value = p.error;
 }
@@ -117,7 +140,7 @@ async function nextChapter() {
   if (busy.next) return; busy.next = true;
   try {
     const j = await post('/api/next-chapter', { ...ctx(), chapters: chapTexts() });
-    if (j.ok) proj.value.chapters.push({ no: j.data.no, title: j.data.title, draft: j.data.draft, text: j.data.chapter, qcHistory: j.data.qcHistory, editing: false });
+    if (j.ok) { addTokens(j.data.usage?.totalTokens); proj.value.chapters.push({ no: j.data.no, title: j.data.title, draft: j.data.draft, text: j.data.chapter, qcHistory: j.data.qcHistory, editing: false }); }
     else errorMsg.value = j.error;
   } finally { busy.next = false; }
 }
@@ -125,7 +148,7 @@ async function rewriteWith(i, instruction) {
   if (busy.rewrite >= 0 || !instruction.trim()) return; busy.rewrite = i;
   try {
     const j = await post('/api/rewrite-chapter', { ...ctx(), chapters: chapTexts(), index: i, instruction });
-    if (j.ok) { proj.value.chapters[i].text = j.data.chapter; proj.value.chapters[i].qcHistory = j.data.qcHistory; proj.value.chapters[i].instruction = ''; }
+    if (j.ok) { addTokens(j.data.usage?.totalTokens); proj.value.chapters[i].text = j.data.chapter; proj.value.chapters[i].qcHistory = j.data.qcHistory; proj.value.chapters[i].instruction = ''; }
     else errorMsg.value = j.error;
   } finally { busy.rewrite = -1; }
 }
@@ -135,6 +158,7 @@ async function adaptOne(i) {
     const c = proj.value.chapters[i];
     const j = await post('/api/adapt-episode', { ...ctx(), chapter: c.text, chapterNo: c.no, chapterTitle: c.title });
     if (j.ok) {
+      addTokens(j.data.usage?.totalTokens);
       const ix = proj.value.episodes.findIndex((e) => e.chapterNo === c.no);
       if (ix >= 0) proj.value.episodes[ix] = j.data; else proj.value.episodes.push(j.data);
     } else errorMsg.value = j.error;
@@ -142,7 +166,7 @@ async function adaptOne(i) {
 }
 function hasEpisode(no) { return proj.value?.episodes?.some((e) => e.chapterNo === no); }
 
-function ctx() { return { hook: proj.value.hook, outline: proj.value.outline, genre: proj.value.genre, length: proj.value.length }; }
+function ctx() { return { hook: proj.value.hook, outline: proj.value.outline, genre: proj.value.genre, length: proj.value.length, lang: lang.value, economy: economy.value }; }
 function chapTexts() { return proj.value.chapters.map((c) => c.text); }
 async function post(url, body) {
   try { return await (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json(); }
@@ -162,6 +186,14 @@ function fmtDate(t) { const d = new Date(t); return `${d.getMonth() + 1}/${d.get
         </div>
       </div>
       <p class="sub">{{ t('sub') }}</p>
+      <div class="budget">
+        <span class="blabel">{{ t('budgetLabel') }}</span>
+        <span class="bbar"><i :class="{ over: budgetPct >= 100 }" :style="{ width: budgetPct + '%' }" /></span>
+        <span class="bnum">{{ usedTokens.toLocaleString() }} / <input v-model.number="tokenBudget" class="binput" type="number" min="0" step="10000" /></span>
+        <span class="bsep">·</span><span>{{ t('videoU') }} {{ videoSec }}s</span>
+        <span class="bsep">·</span><span>{{ t('estU') }} ${{ estCost }}</span>
+        <label class="eco" :title="t('economyTip')"><input type="checkbox" v-model="economy" /> {{ t('economyMode') }}</label>
+      </div>
     </header>
 
     <!-- 历史作品 -->
@@ -268,6 +300,15 @@ function fmtDate(t) { const d = new Date(t); return `${d.getMonth() + 1}/${d.get
 .langsw button { background: #fff; color: #6a6f80; border: none; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .langsw button.on { background: #efeaff; color: #5a3cff; font-weight: 600; }
 .sub { color: #6b7280; margin: 6px 0 0; font-size: 14px; }
+.budget { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: #6b7280; background: #f7f6fd; border: 1px solid #ece9fb; border-radius: 8px; padding: 6px 10px; }
+.blabel { font-weight: 700; color: #5a3cff; }
+.bbar { width: 120px; height: 7px; background: #e6e3f5; border-radius: 4px; overflow: hidden; }
+.bbar i { display: block; height: 100%; background: linear-gradient(90deg, #6a5cff, #a15cff); }
+.bbar i.over { background: #d9534f; }
+.bnum { color: #4a5060; }
+.binput { width: 82px; border: 1px solid #d8d3f0; border-radius: 5px; padding: 1px 5px; font-size: 12px; }
+.bsep { color: #cfd2db; }
+.eco { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; cursor: pointer; color: #4a5060; }
 .history { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 18px 0 4px; padding-bottom: 12px; border-bottom: 1px solid #eef0f6; }
 .hl { font-size: 12px; color: #9aa3b2; }
 .hitem { background: #f5f5fb; border: 1px solid transparent; color: #4a5060; padding: 5px 10px; border-radius: 8px; font-size: 12px; display: flex; align-items: center; gap: 6px; }

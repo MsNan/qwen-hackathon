@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, computed } from 'vue';
-import { t } from '../i18n.js';
+import { t, lang } from '../i18n.js';
 const props = defineProps({
   data: Object,                 // 一集（含 scenes，会被写入 sceneCharacters/castNames）
   cast: { type: Object, default: () => ({}) }, // 项目级定妆库：name → { appearance, refUrl }
@@ -49,7 +49,7 @@ async function autoCast() {
   try {
     const r = await (await fetch('/api/cast/extract', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scenes: props.data.scenes, context: props.data.episodeTitle }),
+      body: JSON.stringify({ scenes: props.data.scenes, context: props.data.episodeTitle, lang: lang.value }),
     })).json();
     if (!r.ok) throw new Error(r.error);
     props.data.sceneCharacters = r.data.sceneCharacters || [];

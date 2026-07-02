@@ -13,12 +13,13 @@ import { DATA_DIR } from './ops.js';
 // 参考图/首帧发给 DashScope 前:本地镜像 /assets/x 转 base64 内联(DashScope 拉不到我们的相对路径)
 function toRemoteRef(url) {
   if (typeof url === 'string' && url.startsWith('/assets/')) {
-    const fp = path.join(DATA_DIR, url.slice('/assets/'.length));
-    if (existsSync(fp)) {
-      const ext = (path.extname(fp).slice(1) || 'png').toLowerCase();
-      const mime = ext === 'jpg' ? 'jpeg' : ext;
-      return `data:image/${mime};base64,` + readFileSync(fp).toString('base64');
-    }
+    const base = path.resolve(DATA_DIR);
+    const fp = path.resolve(base, url.slice('/assets/'.length));
+    if (!fp.startsWith(base + path.sep)) throw new Error('非法资源路径'); // 防路径穿越
+    if (!existsSync(fp)) throw new Error('参考图已过期或丢失(服务可能重启过),请重新生成定妆图'); // 快速失败,不再透传相对路径
+    const ext = (path.extname(fp).slice(1) || 'png').toLowerCase();
+    const mime = ext === 'jpg' ? 'jpeg' : ext;
+    return `data:image/${mime};base64,` + readFileSync(fp).toString('base64');
   }
   return url; // 已是公网 URL 或 base64,原样
 }

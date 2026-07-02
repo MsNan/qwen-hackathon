@@ -4,7 +4,7 @@
  */
 import { AGENTS } from './agents/index.js';
 import { runtimeBrief, scoreFromChecks } from './agents/methodology.js';
-import { complete } from './qwen.js';
+import { complete, MODELS } from './qwen.js';
 
 /** 运行单个 Agent */
 export async function runAgent(name, userInput, memory = {}, overrides = {}) {
@@ -13,14 +13,19 @@ export async function runAgent(name, userInput, memory = {}, overrides = {}) {
 
   // 记忆注入：把已确定的世界观/人物/前情拼进上下文，保证跨步一致
   const memoryBlock = formatMemory(memory);
-  const system = memoryBlock ? `${agent.system}\n\n[已确定的创作记忆]\n${memoryBlock}` : agent.system;
+  let system = memoryBlock ? `${agent.system}\n\n[已确定的创作记忆]\n${memoryBlock}` : agent.system;
+  // 产出语言跟随界面/创意语言(英文评委输入英文→产出英文)
+  if (memory.lang === 'en') system += '\n\nIMPORTANT: Write ALL output (titles, outline, prose, storyboard, JSON string values) in fluent English.';
+
+  // 经济模式:把 pro(qwen-max)降级为 text(qwen-plus),省 token/预算
+  const model = (memory.economy && agent.model === MODELS.pro) ? MODELS.text : agent.model;
 
   // JSON Agent：解析失败重试 1 次,仍失败则抛错(避免质检等 fail-open 静默"满分通过")
   if (agent.json) {
     let last;
     for (let attempt = 1; attempt <= 2; attempt++) {
       const raw = await complete(system, userInput, {
-        model: agent.model,
+        model,
         temperature: (overrides.temperature ?? agent.temperature) + (attempt - 1) * 0.1,
         json: true,
       });
@@ -31,7 +36,7 @@ export async function runAgent(name, userInput, memory = {}, overrides = {}) {
   }
 
   return complete(system, userInput, {
-    model: agent.model,
+    model,
     temperature: overrides.temperature ?? agent.temperature,
   });
 }
@@ -80,8 +85,8 @@ async function qcAndRepair(chapterText, memory, onStep = () => {}) {
 
 /** 全流程编排：创意 → 选题 → 大纲 → 首章(质检自我修复) → 首章短剧分集 */
 export async function runPipeline(idea, opts = {}, onStep = () => {}) {
-  const { genre, length } = opts;
-  const memory = { idea, genre, length };
+  const { genre, length, lang, economy } = opts;
+  const memory = { idea, genre, length, lang, economy };
 
   onStep({ step: 'hook', status: 'running', label: AGENTS.hook.label });
   const hook = await runAgent('hook', `创意：${idea}`, memory);
@@ -102,7 +107,7 @@ export async function runPipeline(idea, opts = {}, onStep = () => {}) {
   memory.chapter = chapter;
 
   onStep({ step: 'screenplay', status: 'running', label: AGENTS.screenplay.label });
-  const episode = await adaptEpisode({ hook, outline, genre, length, chapter, chapterNo: meta.no, chapterTitle: meta.title });
+  const episode = await adaptEpisode({ hook, outline, genre, length, lang, economy, chapter, chapterNo: meta.no, chapterTitle: meta.title });
   onStep({ step: 'screenplay', status: 'done', data: episode });
 
   return {
@@ -124,8 +129,8 @@ function formatMemory(memory) {
 }
 
 /** 续写下一章（含质检自我修复）。前端持有 state 回传 chapters[] 文本数组。 */
-export async function writeNextChapter({ hook, outline, genre, length, chapters = [] }) {
-  const memory = { genre, length, hook, outline };
+export async function writeNextChapter({ hook, outline, genre, length, lang, economy, chapters = [] }) {
+  const memory = { genre, length, hook, outline, lang, economy };
   const nextIdx = chapters.length;
   const meta = outline?.chapters?.[nextIdx] || { no: nextIdx + 1, title: `第${nextIdx + 1}章`, beat: '推进主线' };
   memory.prevTail = (chapters[chapters.length - 1] || '').slice(-400);
@@ -140,8 +145,8 @@ export async function writeNextChapter({ hook, outline, genre, length, chapters 
 }
 
 /** 按"人类编辑的修改意见"重写指定章节（含复检）。 */
-export async function rewriteChapter({ hook, outline, genre, length, chapters = [], index = 0, instruction = '' }) {
-  const memory = { genre, length, hook, outline };
+export async function rewriteChapter({ hook, outline, genre, length, lang, economy, chapters = [], index = 0, instruction = '' }) {
+  const memory = { genre, length, hook, outline, lang, economy };
   if (index > 0) memory.prevTail = (chapters[index - 1] || '').slice(-400);
   const original = chapters[index] || '';
   const meta = outline?.chapters?.[index] || { no: index + 1, title: `第${index + 1}章` };
@@ -156,8 +161,8 @@ export async function rewriteChapter({ hook, outline, genre, length, chapters = 
 }
 
 /** 把单独一章改编成一集短剧（逐集累加，不覆盖旧集）。 */
-export async function adaptEpisode({ hook, outline, genre, length, chapter, chapterNo, chapterTitle }) {
-  const memory = { genre, length, hook, outline };
+export async function adaptEpisode({ hook, outline, genre, length, lang, economy, chapter, chapterNo, chapterTitle }) {
+  const memory = { genre, length, hook, outline, lang, economy };
   const input = `把下面这一章改编成竖屏微短剧的「一集」（对应第 ${chapterNo} 章《${chapterTitle || ''}》），保留本章的钩子与反转，节奏适配 1-2 分钟单集：\n\n${chapter}`;
   const ep = await runAgent('screenplay', input, memory);
   return { chapterNo, chapterTitle, ...ep };
@@ -168,12 +173,13 @@ export async function adaptEpisode({ hook, outline, genre, length, chapter, chap
  * 并标注每个分镜出场了哪些角色。供前端建"定妆库 + 已定妆跳过"。
  * @returns { cast:[{name,appearance}], sceneCharacters:[[name,...], ...] }
  */
-export async function extractCast({ scenes = [], context = '' }) {
+export async function extractCast({ scenes = [], context = '', lang } = {}) {
   const list = scenes
     .map((s, i) => `${i}. [${s.location || ''}${s.time ? '·' + s.time : ''}] ${s.imagePrompt || ''} | 动作:${s.action || ''} ${s.dialogue ? '| 台词:' + s.dialogue : ''}`)
     .join('\n');
   const system =
-    '你是短剧选角与定妆师。从分镜中识别反复出场的【人物角色】，为每个角色写一段用于生成"定妆证件照"的外貌描述：影棚证件照风格、纯浅灰背景、正面清晰半身、固定长相/发型/服装/年龄，便于跨镜头保持同一个人。只输出 JSON，不要解释。';
+    '你是短剧选角与定妆师。从分镜中识别反复出场的【人物角色】，为每个角色写一段用于生成"定妆证件照"的外貌描述：影棚证件照风格、纯浅灰背景、正面清晰半身、固定长相/发型/服装/年龄，便于跨镜头保持同一个人。只输出 JSON，不要解释。' +
+    (lang === 'en' ? '\nOutput each character "name" and "appearance" in English.' : '');
   const user =
     `分镜列表（序号从 0 开始，共 ${scenes.length} 个）：\n${list}\n${context ? '\n故事背景：' + context : ''}\n\n` +
     `严格输出如下 JSON：\n` +

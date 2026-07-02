@@ -19,6 +19,7 @@ import { AGENTS } from './agents/index.js';
 import { GENRES, LENGTHS } from './agents/methodology.js';
 import { mirrorAsset, rateLimit, DATA_DIR } from './ops.js';
 import { startAssembleJob, getAssembleJob } from './assemble.js';
+import { resetUsage, getUsage } from './qwen.js';
 
 const app = express();
 app.use(cors());
@@ -46,27 +47,33 @@ app.get('/api/options', (_req, res) => {
 });
 
 // 续写下一章（含质检自我修复）
-app.post('/api/next-chapter', async (req, res) => {
+app.post('/api/next-chapter', limText, async (req, res) => {
   try {
-    res.json({ ok: true, data: await writeNextChapter(req.body || {}) });
+    resetUsage();
+    const data = await writeNextChapter(req.body || {});
+    res.json({ ok: true, data: { ...data, usage: getUsage() } });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
 // 按作者意见重写指定章节（含复检）
-app.post('/api/rewrite-chapter', async (req, res) => {
+app.post('/api/rewrite-chapter', limText, async (req, res) => {
   try {
-    res.json({ ok: true, data: await rewriteChapter(req.body || {}) });
+    resetUsage();
+    const data = await rewriteChapter(req.body || {});
+    res.json({ ok: true, data: { ...data, usage: getUsage() } });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
 // 把某一章改编成一集短剧（逐集累加）
-app.post('/api/adapt-episode', async (req, res) => {
+app.post('/api/adapt-episode', limText, async (req, res) => {
   try {
-    res.json({ ok: true, data: await adaptEpisode(req.body || {}) });
+    resetUsage();
+    const data = await adaptEpisode(req.body || {});
+    res.json({ ok: true, data: { ...data, usage: getUsage() } });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -113,8 +120,8 @@ app.post('/api/image/keyframe', limImage, async (req, res) => {
 // 选角/定妆抽取：分镜 → 角色表(名字+定妆描述) + 每镜出场角色
 app.post('/api/cast/extract', limText, async (req, res) => {
   try {
-    const { scenes, context } = req.body || {};
-    res.json({ ok: true, data: await extractCast({ scenes: scenes || [], context: context || '' }) });
+    const { scenes, context, lang } = req.body || {};
+    res.json({ ok: true, data: await extractCast({ scenes: scenes || [], context: context || '', lang }) });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -154,7 +161,7 @@ app.get('/api/episode/assemble/status/:jobId', (req, res) => {
 });
 
 // 单个 Agent
-app.post('/api/agent', async (req, res) => {
+app.post('/api/agent', limText, async (req, res) => {
   try {
     const { name, input, memory } = req.body || {};
     const data = await runAgent(name, input, memory || {});
@@ -179,9 +186,11 @@ app.post('/api/pipeline', limText, async (req, res) => {
   req.on('close', () => clearInterval(hb));
 
   try {
-    const { idea, genre, length } = req.body || {};
+    const { idea, genre, length, lang, economy } = req.body || {};
     if (!idea) throw new Error('缺少 idea');
-    const result = await runPipeline(idea, { genre, length }, (step) => send('step', step));
+    resetUsage();
+    const result = await runPipeline(idea, { genre, length, lang, economy }, (step) => send('step', step));
+    result.usage = getUsage();
     send('done', result);
   } catch (e) {
     send('error', { error: String(e.message || e) });

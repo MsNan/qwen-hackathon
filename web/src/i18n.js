@@ -66,6 +66,11 @@ const dict = {
     brand: '烬渊 · 创作工坊',
     badge: '内置签约作者方法论',
     sub: 'AI Showrunner — 多智能体网文 / 短剧创作工作台 · Powered by Qwen',
+    budgetLabel: 'Token 预算',
+    videoU: '视频',
+    estU: '约',
+    economyMode: '经济模式',
+    economyTip: 'qwen-max→plus 省 token',
     // 历史作品
     worksLabel: '历史作品：',
     chSuffix: '章',
@@ -172,6 +177,11 @@ const dict = {
     brand: 'Jinyuan · Creation Workshop',
     badge: 'Signed-Author Craft Built In',
     sub: 'AI Showrunner — Multi-agent web-novel & short-drama studio · Powered by Qwen',
+    budgetLabel: 'Token budget',
+    videoU: 'Video',
+    estU: 'est.',
+    economyMode: 'Economy',
+    economyTip: 'qwen-max→plus to save tokens',
     // Works
     worksLabel: 'Your works:',
     chSuffix: ' ch',

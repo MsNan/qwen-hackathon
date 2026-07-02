@@ -16,6 +16,11 @@ export const MODELS = {
   pro: process.env.QWEN_PRO_MODEL || 'qwen-max',
 };
 
+// ── token 用量累计(供预算面板)──
+let _usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, calls: 0 };
+export function resetUsage() { _usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, calls: 0 }; }
+export function getUsage() { return { ..._usage }; }
+
 export function makeClient() {
   const apiKey = process.env.QWEN_API_KEY;
   if (!apiKey) {
@@ -43,5 +48,10 @@ export async function complete(system, user, opts = {}) {
     ],
     ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
   });
+  const u = res.usage || {};
+  _usage.promptTokens += u.prompt_tokens || 0;
+  _usage.completionTokens += u.completion_tokens || 0;
+  _usage.totalTokens += u.total_tokens || 0;
+  _usage.calls += 1;
   return res.choices[0]?.message?.content?.trim() || '';
 }
