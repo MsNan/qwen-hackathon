@@ -158,6 +158,10 @@ const dict = {
     genVideo: '🎬 生成视频',
     lockCast: '· 锁角色',
     subtitle: '字幕：',
+    autoProduce: '🎬 一键成片',
+    producing: '一键成片中 {done}/{total}…',
+    produceHint: '自动跑:选角 → 全员定妆 → 逐镜生成(前 {cap} 镜)',
+    produceDone: '✓ 成片完成 {done}/{total}',
   },
   en: {
     // App header
@@ -256,6 +260,10 @@ const dict = {
     genVideo: '🎬 Generate video',
     lockCast: '· lock cast',
     subtitle: 'Subtitle: ',
+    autoProduce: '🎬 Auto-produce',
+    producing: 'Auto-producing {done}/{total}…',
+    produceHint: 'Runs automatically: cast → style all → generate each shot (first {cap})',
+    produceDone: '✓ Produced {done}/{total}',
   },
 };
 
