@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { t, verdictLabel } from '../i18n.js';
 
 const props = defineProps({ history: { type: Array, default: () => [] } });
 
@@ -17,34 +18,34 @@ const verdictClass = (v) => (v === '过' ? 'pass' : v === '拒' ? 'reject' : 're
   <div class="qc" v-if="last">
     <!-- 评分（含重写前后对比） -->
     <div class="score-row">
-      <div v-if="hasRewrite" class="score before"><div class="num">{{ first.score }}</div><div class="lbl">初检</div></div>
+      <div v-if="hasRewrite" class="score before"><div class="num">{{ first.score }}</div><div class="lbl">{{ t('qcInitial') }}</div></div>
       <div v-if="hasRewrite" class="arrow" :class="{ up: delta > 0 }">→<span v-if="delta">{{ delta > 0 ? ' +' + delta : ' ' + delta }}</span></div>
-      <div class="score now" :class="verdictClass(last.verdict)"><div class="num">{{ last.score }}</div><div class="lbl">{{ hasRewrite ? '复检' : '评分' }}</div></div>
-      <span class="verdict" :class="verdictClass(last.verdict)">{{ last.verdict }}</span>
+      <div class="score now" :class="verdictClass(last.verdict)"><div class="num">{{ last.score }}</div><div class="lbl">{{ hasRewrite ? t('qcRecheck') : t('qcScore') }}</div></div>
+      <span class="verdict" :class="verdictClass(last.verdict)">{{ verdictLabel(last.verdict) }}</span>
     </div>
 
     <!-- 评分依据（可追溯的扣分公式）-->
     <div class="formula">
-      <span class="ftag">评分依据</span>
+      <span class="ftag">{{ t('scoreBasis') }}</span>
       <template v-if="(last.breakdown || []).length">
         100<span v-for="(b, i) in last.breakdown" :key="i" class="ded"> − {{ b.name }}<i>({{ b.severity }}·−{{ b.penalty }})</i></span> = <b>{{ last.score }}</b>
       </template>
-      <template v-else>未命中任何拒稿硬伤 → 满分基线 <b>100</b></template>
+      <template v-else>{{ t('noFlags') }} <b>100</b></template>
     </div>
 
     <!-- 命中的拒稿硬伤（初检捕获）-->
     <div v-if="(first.flags || []).length" class="flags">
-      <h4>🚩 质检命中的拒稿硬伤（初检）</h4>
+      <h4>{{ t('flagsTitle') }}</h4>
       <div v-for="(f, i) in first.flags" :key="i" class="flag">
-        <div class="flag-name">{{ f.name }} <span class="sev">{{ f.severity }} · 扣 {{ f.penalty }}</span></div>
-        <div class="flag-ev">证据：{{ f.evidence }}</div>
-        <div class="flag-fix">✎ 改法：{{ f.fix }}</div>
+        <div class="flag-name">{{ f.name }} <span class="sev">{{ t('sevPenalty', { sev: f.severity, penalty: f.penalty }) }}</span></div>
+        <div class="flag-ev">{{ t('evidence') }}{{ f.evidence }}</div>
+        <div class="flag-fix">{{ t('fix') }}{{ f.fix }}</div>
       </div>
     </div>
 
     <div v-if="hasRewrite" class="resolved">
-      ♻ 自我修复：针对性重写后复检，<b>{{ resolved }}</b> 条硬伤已消除，评分 {{ first.score }} → {{ last.score }}<template v-if="delta > 0">（+{{ delta }}）</template>。
-      <span v-if="(last.flags || []).length">仍有 {{ last.flags.length }} 条建议继续打磨。</span>
+      {{ t('resolvedMain', { resolved, before: first.score, after: last.score }) }}<template v-if="delta > 0">{{ t('deltaPlus', { delta }) }}</template>{{ t('periodMark') }}
+      <span v-if="(last.flags || []).length">{{ t('stillFlags', { n: last.flags.length }) }}</span>
     </div>
   </div>
 </template>

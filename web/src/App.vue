@@ -4,14 +4,9 @@ import HookCard from './components/HookCard.vue';
 import OutlineCard from './components/OutlineCard.vue';
 import QcCard from './components/QcCard.vue';
 import ScreenplayCard from './components/ScreenplayCard.vue';
+import { lang, setLang, t, genreLabel, lengthLabel, getPresets } from './i18n.js';
 
-const PRESETS = [
-  { genre: '悬疑', text: '县城旧档案馆深夜来电，一桩二十年前结案的命案录音重新响起。' },
-  { genre: '言情', text: '离婚那天，前夫的双胞胎弟弟当众把婚戒重新戴回我手上。' },
-  { genre: '玄幻', text: '我捡到一枚生锈铜钱，每花掉一文，就有一个仇人离奇暴毙。' },
-  { genre: '科幻', text: '公司给每位员工植入情绪芯片，今早我的芯片开始替我说真话。' },
-  { genre: '都市', text: '我把外卖送到顶楼总裁办公室，他抬头说：你终于肯回来了。' },
-];
+const PRESETS = computed(() => getPresets());
 const GENRES = ['悬疑', '言情', '玄幻', '科幻', '都市', '历史', '恐怖', '甜宠'];
 const LENGTHS = ['短篇', '中篇', '长篇'];
 
@@ -19,7 +14,7 @@ const genres = ref(GENRES);
 const lengths = ref(LENGTHS);
 const genre = ref('悬疑');
 const length = ref('短篇');
-const idea = ref(PRESETS[0].text);
+const idea = ref(getPresets()[0].text);
 
 const running = ref(false);
 const errorMsg = ref('');
@@ -73,7 +68,7 @@ async function run() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idea: idea.value, genre: genre.value, length: length.value }),
     });
-    if (!res.ok || !res.body) throw new Error('服务未就绪：请确认后端已启动且已配置 API Key');
+    if (!res.ok || !res.body) throw new Error(lang.value === 'en' ? 'Service not ready: make sure the backend is running and an API key is configured.' : '服务未就绪：请确认后端已启动且已配置 API Key');
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
@@ -95,14 +90,14 @@ function handleEvent(chunk) {
   if (!ev || !dataLine) return;
   const p = JSON.parse(dataLine);
   if (ev === 'step') {
-    if (p.label) stageMsg.value = `${p.label} · ${p.status === 'running' ? '进行中…' : '完成'}`;
+    if (p.label) stageMsg.value = `${p.label} · ${p.status === 'running' ? t('stepRunning') : t('stepDone')}`;
     if (p.status === 'done' && p.step === 'hook') liveHook.value = p.data;
     if (p.status === 'done' && p.step === 'outline') liveOutline.value = p.data;
   } else if (ev === 'done') {
     const fc = p.firstChapter;
     proj.value = {
       id: 'p' + Date.now(), createdAt: Date.now(), updatedAt: Date.now(),
-      title: p.hook?.titles?.[0] || p.idea?.slice(0, 12) || '未命名',
+      title: p.hook?.titles?.[0] || p.idea?.slice(0, 12) || (lang.value === 'en' ? 'Untitled' : '未命名'),
       idea: p.idea, genre: p.genre, length: p.length, hook: p.hook, outline: p.outline,
       chapters: [{ no: fc.no, title: fc.title, draft: fc.draft, text: fc.chapter, qcHistory: fc.qcHistory, editing: false }],
       episodes: p.firstEpisode ? [p.firstEpisode] : [],
@@ -155,99 +150,105 @@ function fmtDate(t) { const d = new Date(t); return `${d.getMonth() + 1}/${d.get
 <template>
   <div class="app">
     <header class="hero">
-      <div class="brand"><h1>烬渊 · 创作工坊</h1><span class="badge">内置签约作者方法论</span></div>
-      <p class="sub">AI Showrunner — 多智能体网文 / 短剧创作工作台 · Powered by Qwen</p>
+      <div class="brand">
+        <h1>{{ t('brand') }}</h1><span class="badge">{{ t('badge') }}</span>
+        <div class="langsw">
+          <button :class="{ on: lang === 'zh' }" @click="setLang('zh')">中</button>
+          <button :class="{ on: lang === 'en' }" @click="setLang('en')">EN</button>
+        </div>
+      </div>
+      <p class="sub">{{ t('sub') }}</p>
     </header>
 
     <!-- 历史作品 -->
     <div v-if="projects.length" class="history">
-      <span class="hl">历史作品：</span>
+      <span class="hl">{{ t('worksLabel') }}</span>
       <button v-for="p in projects" :key="p.id" class="hitem" :class="{ on: proj && proj.id === p.id }" @click="openProject(p)">
-        {{ p.title }} <em>{{ p.chapters.length }}章 · {{ fmtDate(p.updatedAt) }}</em>
+        {{ p.title }} <em>{{ p.chapters.length }}{{ t('chSuffix') }} · {{ fmtDate(p.updatedAt) }}</em>
         <span class="del" @click.stop="delProject(p.id)">×</span>
       </button>
-      <button class="hnew" @click="newProject">＋ 新建</button>
+      <button class="hnew" @click="newProject">{{ t('newWork') }}</button>
     </div>
 
     <!-- 创建区（无当前作品时显示输入） -->
     <template v-if="!proj">
       <div class="controls">
-        <div class="ctl"><label>题材</label><div class="chips">
-          <button v-for="g in genres" :key="g" class="chip" :class="{ on: genre === g }" @click="genre = g">{{ g }}</button>
+        <div class="ctl"><label>{{ t('genre') }}</label><div class="chips">
+          <button v-for="g in genres" :key="g" class="chip" :class="{ on: genre === g }" @click="genre = g">{{ genreLabel(g) }}</button>
         </div></div>
-        <div class="ctl"><label>篇幅</label><div class="chips">
-          <button v-for="l in lengths" :key="l" class="chip" :class="{ on: length === l }" @click="length = l">{{ l }}</button>
+        <div class="ctl"><label>{{ t('length') }}</label><div class="chips">
+          <button v-for="l in lengths" :key="l" class="chip" :class="{ on: length === l }" @click="length = l">{{ lengthLabel(l) }}</button>
         </div></div>
       </div>
       <section class="input-bar">
-        <textarea v-model="idea" rows="2" placeholder="输入一句话创意…" />
-        <button class="go" :disabled="running" @click="run">{{ running ? '编排中…' : '▶ 一键生成' }}</button>
+        <textarea v-model="idea" rows="2" :placeholder="t('ideaPlaceholder')" />
+        <button class="go" :disabled="running" @click="run">{{ running ? t('orchestrating') : t('generate') }}</button>
       </section>
       <div class="presets">
-        <span class="pl">试试：</span>
-        <button v-for="(p, i) in PRESETS" :key="i" class="preset" @click="pickPreset(p)"><em>{{ p.genre }}</em>{{ p.text.slice(0, 14) }}…</button>
+        <span class="pl">{{ t('tryLabel') }}</span>
+        <button v-for="(p, i) in PRESETS" :key="i" class="preset" @click="pickPreset(p)"><em>{{ genreLabel(p.genre) }}</em>{{ p.text.slice(0, 14) }}…</button>
       </div>
 
       <p v-if="errorMsg" class="err">⚠ {{ errorMsg }}</p>
       <div v-if="running" class="running-box">
-        <div class="spin" /> <span>{{ stageMsg || '编排中…' }}</span>
-        <div v-if="liveHook" class="live"><b>选题：</b>{{ liveHook.oneLineHook }}</div>
-        <div v-if="liveOutline" class="live"><b>大纲：</b>{{ liveOutline.logline }}</div>
+        <div class="spin" /> <span>{{ stageMsg || t('orchestrating') }}</span>
+        <div v-if="liveHook" class="live"><b>{{ t('liveHook') }}</b>{{ liveHook.oneLineHook }}</div>
+        <div v-if="liveOutline" class="live"><b>{{ t('liveOutline') }}</b>{{ liveOutline.logline }}</div>
       </div>
-      <div v-if="!running" class="empty">选题材 + 篇幅，输入一句话创意，点「一键生成」→ 5 个 AI Agent 接力出网文 + 短剧</div>
+      <div v-if="!running" class="empty">{{ t('emptyHint') }}</div>
     </template>
 
     <!-- 工作台（有当前作品时显示结果 + 可编辑/续写/改编） -->
     <template v-else>
       <div class="proj-head">
-        <div><h2>{{ proj.title }}</h2><span class="ptag">{{ proj.genre }} · {{ proj.length }} · {{ proj.chapters.length }}{{ rolling ? '章(连载中)' : '/' + totalChapters + '章' }} · {{ proj.episodes.length }}集</span></div>
-        <button class="back" @click="newProject">＋ 写新作品</button>
+        <div><h2>{{ proj.title }}</h2><span class="ptag">{{ genreLabel(proj.genre) }} · {{ lengthLabel(proj.length) }} · {{ proj.chapters.length }}{{ rolling ? t('chSerializing') : '/' + totalChapters + t('chSuffix') }} · {{ proj.episodes.length }}{{ t('episodeSuffix') }}</span></div>
+        <button class="back" @click="newProject">{{ t('newWork2') }}</button>
       </div>
       <p v-if="errorMsg" class="err">⚠ {{ errorMsg }}</p>
 
-      <article class="card"><h3><b>①</b> 钩子选题</h3><HookCard :data="proj.hook" /></article>
-      <article class="card"><h3><b>②</b> 双线大纲</h3><OutlineCard :data="proj.outline" /></article>
+      <article class="card"><h3><b>①</b> {{ t('cardHook') }}</h3><HookCard :data="proj.hook" /></article>
+      <article class="card"><h3><b>②</b> {{ t('cardOutline') }}</h3><OutlineCard :data="proj.outline" /></article>
 
       <!-- 章节（每章：可编辑 + 质检 + 按意见重写 + 改编一集）-->
       <article class="card">
-        <h3><b>③</b> 章节正文 <span class="meta-tag">{{ rolling ? `已写 ${proj.chapters.length} 章 · 连载中(首卷规划 ${totalChapters})` : `${proj.chapters.length} / ${totalChapters} 章` }}</span></h3>
+        <h3><b>③</b> {{ t('cardChapters') }} <span class="meta-tag">{{ rolling ? t('chaptersMetaRolling', { n: proj.chapters.length, total: totalChapters }) : t('chaptersMeta', { n: proj.chapters.length, total: totalChapters }) }}</span></h3>
         <div v-for="(c, i) in proj.chapters" :key="i" class="chapter-blk">
           <div class="ch-head">
-            <span class="ch-title">第 {{ c.no }} 章 · {{ c.title }}</span>
-            <button class="link" @click="c.editing = !c.editing">{{ c.editing ? '完成编辑' : '✎ 手动编辑' }}</button>
+            <span class="ch-title">{{ t('chLabel', { no: c.no }) }}{{ c.title }}</span>
+            <button class="link" @click="c.editing = !c.editing">{{ c.editing ? t('editDone') : t('editStart') }}</button>
             <button class="link" :disabled="busy.episode === i || hasEpisode(c.no)" @click="adaptOne(i)">
-              {{ busy.episode === i ? '改编中…' : hasEpisode(c.no) ? '✓ 已改成一集' : '🎬 改成一集短剧' }}
+              {{ busy.episode === i ? t('adapting') : hasEpisode(c.no) ? t('adaptDone') : t('adaptDo') }}
             </button>
           </div>
           <textarea v-if="c.editing" v-model="c.text" class="ch-edit" rows="10" />
           <div v-else class="ch-text">{{ c.text }}</div>
 
-          <div v-if="busy.rewrite === i" class="ch-busy"><span class="spin" /> 正在按你的意见重写并重新质检…（约 1 分钟，请稍候，完成后下方评分会更新）</div>
-          <div v-if="busy.episode === i" class="ch-busy"><span class="spin" /> 正在把本章改编成一集短剧…（约 30 秒）</div>
+          <div v-if="busy.rewrite === i" class="ch-busy"><span class="spin" /> {{ t('busyRewrite') }}</div>
+          <div v-if="busy.episode === i" class="ch-busy"><span class="spin" /> {{ t('busyAdapt') }}</div>
 
           <QcCard v-if="c.qcHistory && c.qcHistory.length" :history="c.qcHistory" />
 
           <div class="rewrite">
-            <input v-model="c.instruction" class="rw-input" placeholder="按你的意见重写本章（如：加快节奏 / 让女主更主动 / 把反转提前）…" />
+            <input v-model="c.instruction" class="rw-input" :placeholder="t('rewritePlaceholder')" />
             <button class="rw-btn" :disabled="busy.rewrite === i" @click="rewriteWith(i, c.instruction || '')">
-              {{ busy.rewrite === i ? '重写中…' : '按意见重写' }}
+              {{ busy.rewrite === i ? t('rewriting') : t('rewriteDo') }}
             </button>
           </div>
         </div>
-        <div v-if="busy.next" class="ch-busy"><span class="spin" /> 正在续写下一章并自动质检…（约 1 分钟，请稍候）</div>
+        <div v-if="busy.next" class="ch-busy"><span class="spin" /> {{ t('busyNext') }}</div>
         <button v-if="canContinue" class="more" :disabled="busy.next" @click="nextChapter">
-          {{ busy.next ? '续写中（含质检）…' : `＋ 继续写第 ${proj.chapters.length + 1} 章（自动质检）` }}
+          {{ busy.next ? t('continuing') : t('continueDo', { n: proj.chapters.length + 1 }) }}
         </button>
       </article>
 
       <!-- 短剧（逐集累加）-->
       <article v-if="proj.episodes.length" class="card">
-        <h3><b>④</b> 短剧分集 <span class="meta-tag">已改 {{ proj.episodes.length }} 集</span></h3>
+        <h3><b>④</b> {{ t('cardEpisodes') }} <span class="meta-tag">{{ t('episodesMeta', { n: proj.episodes.length }) }}</span></h3>
         <div v-for="(ep, i) in proj.episodes" :key="i" class="ep-blk">
-          <div class="ep-label">第 {{ ep.chapterNo }} 集（对应第 {{ ep.chapterNo }} 章）</div>
+          <div class="ep-label">{{ t('epLabel', { no: ep.chapterNo }) }}</div>
           <ScreenplayCard :data="ep" :cast="proj.cast" />
         </div>
-        <p class="ep-hint">每写一章可单独「改成一集」，分集累加，旧集不会被覆盖。</p>
+        <p class="ep-hint">{{ t('epHint') }}</p>
       </article>
     </template>
   </div>
@@ -259,6 +260,9 @@ function fmtDate(t) { const d = new Date(t); return `${d.getMonth() + 1}/${d.get
 .brand { display: flex; align-items: center; gap: 12px; }
 .hero h1 { font-size: 28px; margin: 0; letter-spacing: 2px; background: linear-gradient(90deg, #6a5cff, #b15cff); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .badge { font-size: 12px; color: #6a5cff; border: 1px solid #cfc6ff; border-radius: 20px; padding: 3px 10px; }
+.langsw { margin-left: auto; display: inline-flex; border: 1px solid #cfc6ff; border-radius: 8px; overflow: hidden; }
+.langsw button { background: #fff; color: #6a6f80; border: none; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.langsw button.on { background: #efeaff; color: #5a3cff; font-weight: 600; }
 .sub { color: #6b7280; margin: 6px 0 0; font-size: 14px; }
 .history { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 18px 0 4px; padding-bottom: 12px; border-bottom: 1px solid #eef0f6; }
 .hl { font-size: 12px; color: #9aa3b2; }

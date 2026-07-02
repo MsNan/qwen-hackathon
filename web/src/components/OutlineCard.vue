@@ -1,4 +1,5 @@
 <script setup>
+import { t } from '../i18n.js';
 defineProps({ data: Object });
 </script>
 
@@ -8,35 +9,35 @@ defineProps({ data: Object });
 
     <div class="lines">
       <div class="line">
-        <h4>明线</h4>
+        <h4>{{ t('mainLine') }}</h4>
         <ul><li v-for="(m, i) in data.mainline" :key="i">{{ typeof m === 'string' ? m : (m.beat || m.title || JSON.stringify(m)) }}</li></ul>
       </div>
       <div class="line hidden">
-        <h4>暗线</h4>
+        <h4>{{ t('hiddenLine') }}</h4>
         <ul><li v-for="(h, i) in data.hiddenline" :key="i">{{ typeof h === 'string' ? h : (h.beat || h.info || JSON.stringify(h)) }}</li></ul>
       </div>
     </div>
 
     <div v-if="data.reversals?.length" class="reversals">
-      <h4>反转 · 物证可回溯</h4>
+      <h4>{{ t('reversals') }}</h4>
       <div v-for="(r, i) in data.reversals" :key="i" class="rev">
         <span class="rev-no">{{ i + 1 }}</span>
         <div>
           <div class="rev-point">{{ r.point }}</div>
-          <div class="rev-ev">🔎 埋设物证：{{ r.evidence }}</div>
+          <div class="rev-ev">{{ t('plantedEvidence') }}{{ r.evidence }}</div>
         </div>
       </div>
     </div>
 
     <div v-if="data.volumes?.length" class="volumes">
-      <h4>分卷主线（长篇连载）</h4>
+      <h4>{{ t('volumeArcs') }}</h4>
       <div v-for="(v, i) in data.volumes" :key="i" class="vol">
-        <span class="vol-no">第{{ v.vol || i + 1 }}卷</span><span class="vol-goal">{{ v.goal }}</span>
+        <span class="vol-no">{{ t('volPrefix', { v: v.vol || i + 1 }) }}</span><span class="vol-goal">{{ v.goal }}</span>
       </div>
     </div>
 
     <div v-if="data.chapters?.length" class="chapters">
-      <h4>{{ data.volumes?.length ? '首卷章节卡点' : '章节卡点' }} <span class="paywall" v-if="data.paywallAt">付费墙 · {{ data.paywallAt }}</span></h4>
+      <h4>{{ data.volumes?.length ? t('firstVolBeats') : t('chapterBeats') }} <span class="paywall" v-if="data.paywallAt">{{ t('paywall') }}{{ data.paywallAt }}</span></h4>
       <ol>
         <li v-for="(c, i) in data.chapters" :key="i">
           <b>{{ c.title }}</b> — {{ c.beat }}

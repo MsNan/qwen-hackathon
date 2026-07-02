@@ -1,4 +1,5 @@
 <script setup>
+import { t, genreLabel } from '../i18n.js';
 defineProps({ data: Object });
 </script>
 
@@ -11,7 +12,7 @@ defineProps({ data: Object });
       <span v-for="(t, i) in data.titles" :key="i" class="chip">{{ t }}</span>
     </div>
     <div class="meta">
-      <span class="tag">题材 · {{ data.genre }}</span>
+      <span class="tag">{{ t('hookGenre') }}{{ genreLabel(data.genre) }}</span>
     </div>
     <p class="sweet">{{ data.sweetspot }}</p>
   </div>

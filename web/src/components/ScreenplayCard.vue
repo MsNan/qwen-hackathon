@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, computed } from 'vue';
+import { t } from '../i18n.js';
 const props = defineProps({
   data: Object,                 // 一集（含 scenes，会被写入 sceneCharacters/castNames）
   cast: { type: Object, default: () => ({}) }, // 项目级定妆库：name → { appearance, refUrl }
@@ -24,24 +25,24 @@ async function pollTask(statusUrl, taskId, extract, maxTries = 60) {
     await sleep(5000);
     let q;
     try { q = await (await fetch(`${statusUrl}/${taskId}`)).json(); }
-    catch { if (++fails >= 6) throw new Error('网络不稳定，轮询失败'); continue; }
+    catch { if (++fails >= 6) throw new Error(t('errNetworkPoll')); continue; }
     fails = 0;
-    if (!q.ok) throw new Error(q.error || '查询失败');
+    if (!q.ok) throw new Error(q.error || t('errQueryFail'));
     const st = q.data.status;
     if (st === 'SUCCEEDED') {
       const v = extract(q.data);
-      if (v == null) throw new Error('任务成功但未返回结果(可能触发内容审核),请重试');
+      if (v == null) throw new Error(t('errNoResult'));
       return v;
     }
     if (st === 'FAILED' || st === 'UNKNOWN') throw new Error(q.data.error || st);
   }
-  throw new Error('超时，可重试');
+  throw new Error(t('errTimeout'));
 }
 
 // 自动选角：从分镜识别角色 + 每镜出场标注；已在定妆库的角色保留(不覆盖)
 async function autoCast() {
   if (extractState.phase === 'running') return;
-  extractState.phase = 'running'; extractState.msg = '识别角色中…';
+  extractState.phase = 'running'; extractState.msg = t('identifying');
   try {
     const r = await (await fetch('/api/cast/extract', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -79,17 +80,17 @@ async function genClip(s, i) {
     const names = sceneChars.value[i] || [];
     const refUrls = names.map((n) => props.cast[n]?.refUrl).filter(Boolean);
     if (refUrls.length) {
-      clips[i] = { phase: 'running', msg: `①生成本镜画面（锁${refUrls.length}位角色）…` };
+      clips[i] = { phase: 'running', msg: t('clipFrame', { n: refUrls.length }) };
       const sceneDesc = [s.location, s.time, s.imagePrompt].filter(Boolean).join('，');
       const kf = await startTask('/api/image/keyframe', { refUrls, sceneDesc });
       const keyframe = await pollTask('/api/image/status', kf, (d) => d.imageUrl, 24);
-      clips[i] = { phase: 'running', msg: '②生成视频…（约 1–2 分钟，勿切走标签页）' };
+      clips[i] = { phase: 'running', msg: t('clipVideo2') };
       const v = await startTask('/api/clip/i2v', { imgUrl: keyframe, prompt: s.action });
       const url = await pollTask('/api/clip/status', v, (d) => d.videoUrl);
       s.videoUrl = url; // 持久化到分镜,刷新不丢
       clips[i] = { phase: 'done', url };
     } else {
-      clips[i] = { phase: 'running', msg: '生成中…（约 1–2 分钟，勿切走标签页）' };
+      clips[i] = { phase: 'running', msg: t('clipVideo') };
       const prompt = [s.imagePrompt, s.action].filter(Boolean).join('。');
       const v = await startTask('/api/clip/start', { prompt });
       const url = await pollTask('/api/clip/status', v, (d) => d.videoUrl);
@@ -102,31 +103,31 @@ async function genClip(s, i) {
 
 <template>
   <div class="screenplay">
-    <div class="ep">🎬 {{ data.episodeTitle }} <span class="cnt">{{ (data.scenes || []).length }} 个分镜</span></div>
+    <div class="ep">🎬 {{ data.episodeTitle }} <span class="cnt">{{ t('shotsCount', { n: (data.scenes || []).length }) }}</span></div>
 
     <!-- 选角 + 定妆库 -->
     <div class="castbox">
       <div class="casthead">
-        <span class="ct">🎭 角色定妆库 <em>—— 自动从剧情识别角色，定妆后每个分镜锁定同一批人</em></span>
+        <span class="ct">{{ t('lookbook') }} <em>{{ t('lookbookHint') }}</em></span>
         <button class="castbtn" :disabled="extractState.phase === 'running'" @click="autoCast">
           <template v-if="extractState.phase === 'running'"><span class="spin" /> {{ extractState.msg }}</template>
-          <template v-else-if="castNames.length">🔄 重新选角</template>
-          <template v-else>🎭 自动选角</template>
+          <template v-else-if="castNames.length">{{ t('recast') }}</template>
+          <template v-else>{{ t('autoCast') }}</template>
         </button>
       </div>
       <span v-if="extractState.phase === 'error'" class="verr">✕ {{ extractState.msg }}</span>
 
       <div v-if="castNames.length" class="castlist">
         <div v-for="name in castNames" :key="name" class="charcard">
-          <div class="cname">{{ name }}<em v-if="cast[name] && cast[name].refUrl" class="ok"> ✓ 已定妆</em></div>
+          <div class="cname">{{ name }}<em v-if="cast[name] && cast[name].refUrl" class="ok"> {{ t('styled') }}</em></div>
           <img v-if="cast[name] && cast[name].refUrl" :src="cast[name].refUrl" class="charimg" :alt="name" />
           <textarea v-else-if="cast[name]" v-model="cast[name].appearance" class="cdesc" rows="3" />
           <button class="cbtn" :disabled="castPhase[name] === 'running'" @click="castOne(name)">
-            <template v-if="castPhase[name] === 'running'"><span class="spin" /> 定妆中…</template>
-            <template v-else-if="cast[name] && cast[name].refUrl">🔄 重新定妆</template>
-            <template v-else>🎭 生成定妆图</template>
+            <template v-if="castPhase[name] === 'running'"><span class="spin" /> {{ t('styling') }}</template>
+            <template v-else-if="cast[name] && cast[name].refUrl">{{ t('restyle') }}</template>
+            <template v-else>{{ t('genLook') }}</template>
           </button>
-          <span v-if="castPhase[name] === 'error'" class="verr">✕ 失败，可重试</span>
+          <span v-if="castPhase[name] === 'error'" class="verr">{{ t('castFailRetry') }}</span>
         </div>
       </div>
     </div>
@@ -145,12 +146,12 @@ async function genClip(s, i) {
         </div>
         <div class="action">{{ s.action }}</div>
         <div v-if="s.dialogue" class="dia">「{{ s.dialogue }}」</div>
-        <div v-if="s.caption" class="cap">字幕：{{ s.caption }}</div>
+        <div v-if="s.caption" class="cap">{{ t('subtitle') }}{{ s.caption }}</div>
         <div class="vbar">
           <button class="vbtn" :disabled="clips[i] && clips[i].phase === 'running'" @click="genClip(s, i)">
             <template v-if="clips[i] && clips[i].phase === 'running'"><span class="spin" /> {{ clips[i].msg }}</template>
-            <template v-else-if="(clips[i] && clips[i].phase === 'done') || s.videoUrl">🎬 重新生成</template>
-            <template v-else>🎬 生成视频<em v-if="(sceneChars[i] || []).some((n) => cast[n] && cast[n].refUrl)" class="lock"> · 锁角色</em></template>
+            <template v-else-if="(clips[i] && clips[i].phase === 'done') || s.videoUrl">{{ t('regen') }}</template>
+            <template v-else>{{ t('genVideo') }}<em v-if="(sceneChars[i] || []).some((n) => cast[n] && cast[n].refUrl)" class="lock"> {{ t('lockCast') }}</em></template>
           </button>
           <span v-if="clips[i] && clips[i].phase === 'error'" class="verr">✕ {{ clips[i].msg }}</span>
         </div>
