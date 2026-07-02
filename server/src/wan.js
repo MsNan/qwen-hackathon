@@ -6,6 +6,23 @@
  * 为避免反向代理把"等 1-2 分钟的长请求"判超时,后端只做"提交"和"单次查询"两个轻动作,
  * 由前端按 task_id 轮询。
  */
+import { readFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { DATA_DIR } from './ops.js';
+
+// 参考图/首帧发给 DashScope 前:本地镜像 /assets/x 转 base64 内联(DashScope 拉不到我们的相对路径)
+function toRemoteRef(url) {
+  if (typeof url === 'string' && url.startsWith('/assets/')) {
+    const fp = path.join(DATA_DIR, url.slice('/assets/'.length));
+    if (existsSync(fp)) {
+      const ext = (path.extname(fp).slice(1) || 'png').toLowerCase();
+      const mime = ext === 'jpg' ? 'jpeg' : ext;
+      return `data:image/${mime};base64,` + readFileSync(fp).toString('base64');
+    }
+  }
+  return url; // 已是公网 URL 或 base64,原样
+}
+
 const BASE = 'https://dashscope-intl.aliyuncs.com/api/v1';
 const CREATE_URL = `${BASE}/services/aigc/video-generation/video-synthesis`;
 const IMAGE_URL = `${BASE}/services/aigc/image-generation/generation`;
@@ -113,7 +130,7 @@ export async function createKeyframeTask(refImageUrls, sceneDesc) {
     refs.length > 1
       ? `There are ${refs.length} reference people. Keep EACH person's face, hair and features identical to their own reference image. Place these same people together into the following scene with full identity consistency, cinematic, vertical: ${sceneDesc.slice(0, 1500)}`
       : `Keep the EXACT same person from the reference image — identical face, hair and features. Place this same person into the following scene with full character consistency, cinematic, vertical half-body: ${sceneDesc.slice(0, 1500)}`;
-  const content = [...refs.map((u) => ({ image: u })), { text: instruction }];
+  const content = [...refs.map((u) => ({ image: toRemoteRef(u) })), { text: instruction }];
   return postTask(IMAGE_URL, {
     model: EDIT_MODEL,
     input: { messages: [{ role: 'user', content }] },
@@ -138,7 +155,7 @@ export async function createI2VTask(imgUrl, prompt, opts = {}) {
   if (!imgUrl) throw new Error('缺少关键帧图片');
   return postTask(CREATE_URL, {
     model: I2V_MODEL,
-    input: { img_url: imgUrl, prompt: (prompt || '').slice(0, 800) },
+    input: { img_url: toRemoteRef(imgUrl), prompt: (prompt || '').slice(0, 800) },
     parameters: { resolution: opts.resolution || '480P', duration: opts.duration || 5 },
   });
 }
